@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -54,6 +55,9 @@ interface AddExpenseSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_empty_custom_category_";
+const NO_CATEGORY_VALUE = "_none_";
+
 export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
   const { users, events, addExpense: addAppDataExpense } = useAppData();
   const { toast } = useToast();
@@ -69,7 +73,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
       paidById: users[0]?.id || '',
       participantIds: users.map(u => u.id), // Default to all users
       eventId: '',
-      category: '',
+      category: '', // Initially, category is an empty string (shows placeholder)
     },
   });
 
@@ -107,12 +111,29 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
   }, [watchedDescription, handleCategorize]);
 
   function onSubmit(data: ExpenseFormValues) {
-    const finalCategory = data.category || customCategory;
-    addAppDataExpense({ ...data, category: finalCategory });
+    let categoryToSave = data.category;
+
+    if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === '') {
+      // If "No Category" was selected, or if the custom input was cleared (making form value an empty string, showing placeholder)
+      categoryToSave = undefined;
+    }
+    // The DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE should not be selected as its item is disabled.
+    // Any other string value (suggested category or typed custom category) is kept as is.
+
+    addAppDataExpense({ ...data, category: categoryToSave });
     toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
-    form.reset();
+    
+    // Reset form to default values, including category to ''
+    form.reset({
+        description: '',
+        amount: 0,
+        paidById: users[0]?.id || '',
+        participantIds: users.map(u => u.id),
+        eventId: '',
+        category: '', 
+      });
     setSuggestedCategories([]);
-    setCustomCategory('');
+    setCustomCategory(''); // Also reset the local customCategory state
     onOpenChange(false);
   }
 
@@ -232,7 +253,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">No Event</SelectItem>
+                      <SelectItem value="">No Event</SelectItem> {/* This is fine, it's for a different Select */}
                       {events.map(event => (
                         <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>
                       ))}
@@ -260,18 +281,23 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
                       {suggestedCategories.length > 0 && <hr className="my-1"/>}
-                      <SelectItem value={customCategory} disabled={!customCategory}>
+                      {/* Ensure customCategory item has non-empty value. It's disabled if customCategory is empty. */}
+                      <SelectItem 
+                        value={customCategory || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
+                        disabled={!customCategory}
+                      >
                         {customCategory || "Enter custom below"}
                       </SelectItem>
-                       <SelectItem value="">No Category</SelectItem>
+                      <SelectItem value={NO_CATEGORY_VALUE}>No Category</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input 
                     placeholder="Or type a custom category" 
                     value={customCategory}
                     onChange={(e) => {
-                      setCustomCategory(e.target.value);
-                      field.onChange(e.target.value); // Set form value to custom if typed
+                      const typedValue = e.target.value;
+                      setCustomCategory(typedValue);
+                      field.onChange(typedValue); // Set form value to custom if typed
                     }}
                     className="mt-2"
                   />
@@ -293,3 +319,4 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
     </Sheet>
   );
 }
+
