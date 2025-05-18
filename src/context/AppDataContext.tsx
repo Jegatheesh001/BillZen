@@ -12,8 +12,8 @@ const DEFAULT_USERS: User[] = [
 ];
 
 const INITIAL_CATEGORIES: string[] = [
-  "Food", "Transport", "Shopping", "Utilities", "Entertainment", "Groceries", "Travel", "Health", "Other",
-];
+  "Food", "Transport", "Shopping", "Utilities", "Entertainment", "Groceries", "Travel", "Health", "Settlement", "Other",
+].sort();
 
 interface AppDataContextState {
   users: User[];
@@ -28,9 +28,10 @@ interface AppDataContextState {
   updateEvent: (eventId: string, updatedData: EventFormData) => void;
   updateUser: (userId: string, name: string, avatarUrl?: string) => void;
   setCurrentUserById: (userId: string | null) => void;
-  addCategory: (categoryName: string) => boolean; // Returns true if added, false if already exists
-  updateCategory: (oldCategoryName: string, newCategoryName: string) => boolean; // Returns true if updated
+  addCategory: (categoryName: string) => boolean; 
+  updateCategory: (oldCategoryName: string, newCategoryName: string) => boolean; 
   removeCategory: (categoryName: string) => void;
+  addSettlement: (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }) => Expense;
 }
 
 const AppDataContext = createContext<AppDataContextState | undefined>(undefined);
@@ -113,7 +114,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const addCategory = useCallback((categoryName: string): boolean => {
     if (!categoryName.trim() || categories.find(c => c.toLowerCase() === categoryName.trim().toLowerCase())) {
-      return false; // Already exists or empty
+      return false; 
     }
     setCategories(prev => [...prev, categoryName.trim()].sort());
     return true;
@@ -121,7 +122,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const updateCategory = useCallback((oldCategoryName: string, newCategoryName: string): boolean => {
     if (!newCategoryName.trim() || categories.find(c => c.toLowerCase() === newCategoryName.trim().toLowerCase() && c.toLowerCase() !== oldCategoryName.toLowerCase())) {
-      return false; // New name is empty or already exists (and it's not the same old name being re-saved)
+      return false; 
     }
     setCategories(prev => prev.map(c => c.toLowerCase() === oldCategoryName.toLowerCase() ? newCategoryName.trim() : c).sort());
     setExpenses(prevExpenses => prevExpenses.map(exp => 
@@ -141,6 +142,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     ));
   }, []);
 
+  const addSettlement = useCallback((details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }): Expense => {
+    const settlementExpenseData = {
+      description: `Settlement: ${details.payerName} to ${details.recipientName}`,
+      amount: details.amount,
+      paidById: details.payerId,
+      participantIds: [details.recipientId], // The recipient is the sole "beneficiary" of this payment
+      category: "Settlement",
+    };
+    return addExpense(settlementExpenseData);
+  }, [addExpense]);
+
   const contextValue = useMemo(() => ({
     users,
     expenses,
@@ -157,7 +169,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     addCategory,
     updateCategory,
     removeCategory,
-  }), [users, expenses, events, categories, currentUser, addUser, addExpense, updateExpense, addEvent, updateEvent, updateUser, setCurrentUserById, addCategory, updateCategory, removeCategory]);
+    addSettlement,
+  }), [users, expenses, events, categories, currentUser, addUser, addExpense, updateExpense, addEvent, updateEvent, updateUser, setCurrentUserById, addCategory, updateCategory, removeCategory, addSettlement]);
 
   return (
     <AppDataContext.Provider value={contextValue}>
