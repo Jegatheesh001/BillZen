@@ -16,19 +16,31 @@ import type { Expense } from '@/lib/types';
 export default function ExpensesPage() {
   const [isExpenseSheetOpen, setIsExpenseSheetOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const { expenses, users, events, currentUser } = useAppData(); // Get currentUser
+  const { expenses, users, events, currentUser } = useAppData();
   const [searchTerm, setSearchTerm] = useState('');
 
   const debts = useMemo(() => calculateDebts(expenses, users, currentUser?.id), [expenses, users, currentUser]);
 
   const filteredExpenses = useMemo(() => {
-    if (!searchTerm) return expenses;
-    return expenses.filter(expense => 
+    let expensesToShow = expenses;
+
+    // Filter by currentUser if one is selected
+    if (currentUser) {
+      expensesToShow = expenses.filter(expense =>
+        expense.paidById === currentUser.id ||
+        expense.participantIds.includes(currentUser.id)
+      );
+    }
+
+    // Then, filter by searchTerm if there is one
+    if (!searchTerm) return expensesToShow;
+
+    return expensesToShow.filter(expense => 
       expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      expense.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase())
+      (expense.category && expense.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }, [expenses, searchTerm, users]);
+  }, [expenses, users, currentUser, searchTerm]);
 
   const handleAddExpenseClick = () => {
     setEditingExpense(null);
@@ -46,6 +58,10 @@ export default function ExpensesPage() {
       setEditingExpense(null); // Clear editing expense when sheet is closed
     }
   };
+
+  const noExpensesMessage = currentUser 
+    ? "No expenses involving you yet." 
+    : "No expenses recorded yet.";
 
   return (
     <div className="space-y-6">
@@ -66,13 +82,13 @@ export default function ExpensesPage() {
         />
       </div>
       
-      <DebtSummary debts={debts} currentUserId={currentUser?.id} /> {/* Pass currentUserId */}
+      <DebtSummary debts={debts} currentUserId={currentUser?.id} />
 
       <div>
         <h3 className="text-xl font-semibold mb-3">Recent Expenses</h3>
         {filteredExpenses.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">
-            No expenses recorded yet. <br/>Click &quot;Add Expense&quot; to get started!
+            {noExpensesMessage} <br/>Click &quot;Add Expense&quot; to get started!
           </p>
         ) : (
           <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height as needed */}
