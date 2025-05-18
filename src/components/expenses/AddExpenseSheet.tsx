@@ -1,13 +1,12 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -59,22 +58,10 @@ const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_dummy_empty_custom_category_";
 const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
-const HARDCODED_CATEGORIES: string[] = [
-  "Food",
-  "Transport",
-  "Shopping",
-  "Utilities",
-  "Entertainment",
-  "Groceries",
-  "Travel",
-  "Health",
-  "Other",
-];
-
 export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
-  const { users, events, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense } = useAppData();
+  const { users, events, categories, addCategory, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense } = useAppData();
   const { toast } = useToast();
-  const [customCategory, setCustomCategory] = useState('');
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -95,34 +82,39 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         amount: expenseToEdit.amount,
         paidById: expenseToEdit.paidById,
         participantIds: expenseToEdit.participantIds,
-        eventId: expenseToEdit.eventId || '',
-        category: expenseToEdit.category || '',
+        eventId: expenseToEdit.eventId || NO_EVENT_VALUE,
+        category: expenseToEdit.category || NO_CATEGORY_VALUE,
       });
-      if (expenseToEdit.category && !HARDCODED_CATEGORIES.includes(expenseToEdit.category)) {
-        setCustomCategory(expenseToEdit.category);
-      } else {
-        setCustomCategory('');
-      }
-    } else if (open && !expenseToEdit) { // Reset to defaults if opening for ADD
+      // If the category being edited is not in the predefined list, it's a custom one.
+      // We don't need to set customCategoryInput here as it's primarily for *new* custom categories.
+      // The Select component will handle displaying it if it matches a value.
+      setCustomCategoryInput(''); 
+    } else if (open && !expenseToEdit) { 
       form.reset({
         description: '',
         amount: 0,
         paidById: users[0]?.id || '',
         participantIds: users.map(u => u.id),
-        eventId: '',
-        category: '',
+        eventId: NO_EVENT_VALUE,
+        category: NO_CATEGORY_VALUE,
       });
-      setCustomCategory('');
+      setCustomCategoryInput('');
     }
   }, [open, expenseToEdit, form, users]);
 
 
   function onSubmit(data: ExpenseFormValues) {
     let categoryToSave = data.category;
-    if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === '' || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
+
+    if (customCategoryInput.trim()) { // Prioritize typed custom category
+      categoryToSave = customCategoryInput.trim();
+      if (!categories.find(c => c.toLowerCase() === categoryToSave!.toLowerCase())) {
+        addCategory(categoryToSave!); // Add to global list if new
+      }
+    } else if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
       categoryToSave = undefined;
     }
-
+    
     let eventIdToSave = data.eventId;
     if (eventIdToSave === NO_EVENT_VALUE || eventIdToSave === '') {
       eventIdToSave = undefined;
@@ -143,10 +135,10 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         amount: 0,
         paidById: users[0]?.id || '',
         participantIds: users.map(u => u.id),
-        eventId: '',
-        category: '',
+        eventId: NO_EVENT_VALUE,
+        category: NO_CATEGORY_VALUE,
       });
-    setCustomCategory('');
+    setCustomCategoryInput('');
     onOpenChange(false); 
   }
   
@@ -155,6 +147,15 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     ? "Modify the details of the expense."
     : "Fill in the details of the expense. Click save when you're done.";
   const submitButtonText = expenseToEdit ? "Save Changes" : "Save Expense";
+
+  const currentCategoryValue = form.watch('category');
+  const displayCategories = [...categories];
+  if (expenseToEdit?.category && !categories.includes(expenseToEdit.category)) {
+    // If editing and the expense has a category not in the global list, add it for selection
+    displayCategories.push(expenseToEdit.category);
+    displayCategories.sort();
+  }
+
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -221,38 +222,40 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={() => (
                 <FormItem>
                   <FormLabel>Participants</FormLabel>
-                  <div className="space-y-2">
-                    {users.map((user) => (
-                      <FormField
-                        key={user.id}
-                        control={form.control}
-                        name="participantIds"
-                        render={({ field }) => {
-                          return (
-                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value?.includes(user.id)}
-                                  onCheckedChange={(checked) => {
-                                    return checked
-                                      ? field.onChange([...(field.value || []), user.id])
-                                      : field.onChange(
-                                          (field.value || []).filter(
-                                            (value) => value !== user.id
+                   <ScrollArea className="h-32 rounded-md border p-2">
+                    <div className="space-y-2">
+                      {users.map((user) => (
+                        <FormField
+                          key={user.id}
+                          control={form.control}
+                          name="participantIds"
+                          render={({ field }) => {
+                            return (
+                              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value?.includes(user.id)}
+                                    onCheckedChange={(checked) => {
+                                      return checked
+                                        ? field.onChange([...(field.value || []), user.id])
+                                        : field.onChange(
+                                            (field.value || []).filter(
+                                              (value) => value !== user.id
+                                            )
                                           )
-                                        )
-                                  }}
-                                />
-                              </FormControl>
-                              <FormLabel className="font-normal">
-                                {user.name}
-                              </FormLabel>
-                            </FormItem>
-                          )
-                        }}
-                      />
-                    ))}
-                  </div>
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormLabel className="font-normal">
+                                  {user.name}
+                                </FormLabel>
+                              </FormItem>
+                            )
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </ScrollArea>
                   <FormMessage />
                 </FormItem>
               )}
@@ -286,33 +289,47 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Category</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || NO_CATEGORY_VALUE}>
+                  <Select 
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      if (value !== DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
+                        setCustomCategoryInput(''); // Clear custom input if a select option is chosen
+                      }
+                    }} 
+                    value={customCategoryInput.trim() ? DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE : field.value || NO_CATEGORY_VALUE}
+                  >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {HARDCODED_CATEGORIES.map(cat => (
+                      <SelectItem value={NO_CATEGORY_VALUE}>No Category</SelectItem>
+                      {displayCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
-                      {(customCategory || HARDCODED_CATEGORIES.length > 0) && <hr className="my-1"/>}
+                      {/* This item represents the custom input. It's selected if custom input has text. */}
                       <SelectItem 
-                        value={customCategory.trim() || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
-                        disabled={!customCategory.trim()} 
+                        value={DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE}
+                        className={customCategoryInput.trim() ? '' : 'hidden'} // Show if custom input has text
                       >
-                        {customCategory.trim() || "Enter custom below"}
+                        {customCategoryInput.trim() || "Custom..."} 
                       </SelectItem>
-                      <SelectItem value={NO_CATEGORY_VALUE}>No Category</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input 
-                    placeholder="Or type a custom category" 
-                    value={customCategory}
+                    placeholder="Or type a new/custom category" 
+                    value={customCategoryInput}
                     onChange={(e) => {
                       const typedValue = e.target.value;
-                      setCustomCategory(typedValue);
-                      field.onChange(typedValue.trim() || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE); 
+                      setCustomCategoryInput(typedValue);
+                      // If user types, select the dummy "custom" item to indicate custom input is active
+                      if (typedValue.trim()) {
+                        field.onChange(DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE); 
+                      } else if (currentCategoryValue === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
+                        // If input is cleared and dummy was selected, revert to "No Category"
+                        field.onChange(NO_CATEGORY_VALUE);
+                      }
                     }}
                     className="mt-2"
                   />
