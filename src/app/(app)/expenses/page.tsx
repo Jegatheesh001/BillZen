@@ -1,0 +1,72 @@
+"use client";
+
+import React, { useState, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { PlusCircle, Search } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { AddExpenseSheet } from '@/components/expenses/AddExpenseSheet';
+import { ExpenseCard } from '@/components/expenses/ExpenseCard';
+import { DebtSummary } from '@/components/expenses/DebtSummary';
+import { useAppData } from '@/context/AppDataContext';
+import { calculateDebts } from '@/lib/debt-utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
+export default function ExpensesPage() {
+  const [isAddExpenseSheetOpen, setIsAddExpenseSheetOpen] = useState(false);
+  const { expenses, users, events } = useAppData();
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const debts = useMemo(() => calculateDebts(expenses, users), [expenses, users]);
+
+  const filteredExpenses = useMemo(() => {
+    if (!searchTerm) return expenses;
+    return expenses.filter(expense => 
+      expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      expense.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [expenses, searchTerm, users]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-semibold">Expenses</h2>
+        <Button onClick={() => setIsAddExpenseSheetOpen(true)} size="sm" className="rounded-full">
+          <PlusCircle className="mr-2 h-5 w-5" /> Add Expense
+        </Button>
+      </div>
+
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        <Input 
+          placeholder="Search expenses..." 
+          className="pl-10"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+      
+      <DebtSummary debts={debts} />
+
+      <div>
+        <h3 className="text-xl font-semibold mb-3">Recent Expenses</h3>
+        {filteredExpenses.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8">
+            No expenses recorded yet. <br/>Click &quot;Add Expense&quot; to get started!
+          </p>
+        ) : (
+          <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height as needed */}
+            <div className="space-y-4 pr-2">
+            {filteredExpenses.map(expense => {
+              const eventName = events.find(e => e.id === expense.eventId)?.name;
+              return <ExpenseCard key={expense.id} expense={expense} users={users} eventName={eventName} />;
+            })}
+            </div>
+          </ScrollArea>
+        )}
+      </div>
+
+      <AddExpenseSheet open={isAddExpenseSheetOpen} onOpenChange={setIsAddExpenseSheetOpen} />
+    </div>
+  );
+}
