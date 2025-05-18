@@ -1,6 +1,7 @@
+
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/form';
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
+import type { Event, EventFormData } from '@/lib/types';
 
 const eventFormSchema = z.object({
   name: z.string().min(1, "Event name is required."),
@@ -38,26 +40,53 @@ type EventFormValues = z.infer<typeof eventFormSchema>;
 interface AddEventSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  eventToEdit?: Event | null;
 }
 
-export function AddEventSheet({ open, onOpenChange }: AddEventSheetProps) {
-  const { users, addEvent: addAppDataEvent } = useAppData();
+export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheetProps) {
+  const { users, addEvent: addAppDataEvent, updateEvent: updateAppDataEvent } = useAppData();
   const { toast } = useToast();
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
     defaultValues: {
       name: '',
-      memberIds: users.map(u => u.id), // Default to all users
+      memberIds: users.map(u => u.id),
     },
   });
 
+  useEffect(() => {
+    if (open && eventToEdit) {
+      form.reset({
+        name: eventToEdit.name,
+        memberIds: eventToEdit.memberIds,
+      });
+    } else if (open && !eventToEdit) {
+      form.reset({
+        name: '',
+        memberIds: users.map(u => u.id), // Default to all users
+      });
+    }
+  }, [open, eventToEdit, form, users]);
+
   function onSubmit(data: EventFormValues) {
-    addAppDataEvent(data);
-    toast({ title: "Event Created", description: `${data.name} has been created.` });
-    form.reset();
+    const eventData: EventFormData = data;
+    if (eventToEdit) {
+      updateAppDataEvent(eventToEdit.id, eventData);
+      toast({ title: "Event Updated", description: `${data.name} has been updated.` });
+    } else {
+      addAppDataEvent(eventData);
+      toast({ title: "Event Created", description: `${data.name} has been created.` });
+    }
+    form.reset({ name: '', memberIds: users.map(u => u.id) });
     onOpenChange(false);
   }
+  
+  const sheetTitle = eventToEdit ? "Edit Event" : "Create New Event";
+  const sheetDescription = eventToEdit 
+    ? "Modify the details of the event."
+    : "Group expenses by creating an event. Select members for this event.";
+  const submitButtonText = eventToEdit ? "Save Changes" : "Create Event";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -65,9 +94,9 @@ export function AddEventSheet({ open, onOpenChange }: AddEventSheetProps) {
         <ScrollArea className="h-full">
           <div className="p-6">
             <SheetHeader>
-              <SheetTitle>Create New Event</SheetTitle>
+              <SheetTitle>{sheetTitle}</SheetTitle>
               <SheetDescription>
-                Group expenses by creating an event. Select members for this event.
+                {sheetDescription}
               </SheetDescription>
             </SheetHeader>
             <Form {...form}>
@@ -131,7 +160,7 @@ export function AddEventSheet({ open, onOpenChange }: AddEventSheetProps) {
                   <SheetClose asChild>
                     <Button type="button" variant="outline">Cancel</Button>
                   </SheetClose>
-                  <Button type="submit">Create Event</Button>
+                  <Button type="submit">{submitButtonText}</Button>
                 </SheetFooter>
               </form>
             </Form>

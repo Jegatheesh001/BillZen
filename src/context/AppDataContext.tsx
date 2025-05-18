@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import type { User, Expense, Event } from '@/lib/types';
+import type { User, Expense, Event, EventFormData } from '@/lib/types';
 
 const DEFAULT_USERS: User[] = [
   { id: 'user_alice', name: 'Alice', avatarUrl: 'https://placehold.co/100x100.png?text=A' },
@@ -19,7 +19,8 @@ interface AppDataContextState {
   addUser: (name: string, avatarUrl?: string) => User;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'>) => Expense;
   updateExpense: (expenseId: string, updatedData: Omit<Expense, 'id' | 'date'>) => void;
-  addEvent: (eventData: Omit<Event, 'id'>) => Event;
+  addEvent: (eventData: EventFormData) => Event;
+  updateEvent: (eventId: string, updatedData: EventFormData) => void;
   updateUser: (userId: string, name: string, avatarUrl?: string) => void;
   setCurrentUserById: (userId: string | null) => void;
 }
@@ -62,13 +63,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     );
   }, []);
   
-  const addEvent = useCallback((eventData: Omit<Event, 'id'>): Event => {
+  const addEvent = useCallback((eventData: EventFormData): Event => {
     const newEvent: Event = {
       ...eventData,
       id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     };
     setEvents(prev => [newEvent, ...prev]);
     return newEvent;
+  }, []);
+
+  const updateEvent = useCallback((eventId: string, updatedData: EventFormData) => {
+    setEvents(prevEvents =>
+      prevEvents.map(event =>
+        event.id === eventId
+          ? { ...event, ...updatedData } // Preserve original id
+          : event
+      )
+    );
   }, []);
 
   const updateUser = useCallback((userId: string, name: string, avatarUrl?: string) => {
@@ -100,9 +111,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     addExpense,
     updateExpense,
     addEvent,
+    updateEvent,
     updateUser,
     setCurrentUserById,
-  }), [users, expenses, events, currentUser, addUser, addExpense, updateExpense, addEvent, updateUser, setCurrentUserById]);
+  }), [users, expenses, events, currentUser, addUser, addExpense, updateExpense, addEvent, updateEvent, updateUser, setCurrentUserById]);
 
   return (
     <AppDataContext.Provider value={contextValue}>

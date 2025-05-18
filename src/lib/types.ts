@@ -23,6 +23,9 @@ export interface Event {
   // expenses can be filtered from global expenses list by eventId
 }
 
+// Used for form data when creating/updating an event, omitting the id
+export type EventFormData = Omit<Event, 'id'>;
+
 export interface Debt {
   userId: string;
   userName: string;

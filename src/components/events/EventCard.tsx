@@ -1,18 +1,21 @@
+
 "use client";
 
 import type { Event as EventType, User, Expense } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Users, Receipt } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Receipt, Pencil } from 'lucide-react';
 
 interface EventCardProps {
   event: EventType;
   users: User[];
-  expenses: Expense[]; // To count expenses for this event
+  expenses: Expense[];
+  onEdit: (event: EventType) => void;
 }
 
-export function EventCard({ event, users, expenses }: EventCardProps) {
+export function EventCard({ event, users, expenses, onEdit }: EventCardProps) {
   const members = users.filter(u => event.memberIds.includes(u.id));
   const eventExpensesCount = expenses.filter(ex => ex.eventId === event.id).length;
   const totalEventSpend = expenses
@@ -22,10 +25,18 @@ export function EventCard({ event, users, expenses }: EventCardProps) {
   return (
     <Card className="mb-4 shadow-lg rounded-xl overflow-hidden">
       <CardHeader className="bg-card/50 p-4">
-        <CardTitle className="text-lg font-semibold text-foreground">{event.name}</CardTitle>
-        <CardDescription className="text-xs">
-          {members.length} member{members.length === 1 ? '' : 's'}
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-lg font-semibold text-foreground">{event.name}</CardTitle>
+            <CardDescription className="text-xs">
+              {members.length} member{members.length === 1 ? '' : 's'}
+            </CardDescription>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(event)}>
+            <Pencil className="h-4 w-4" />
+            <span className="sr-only">Edit event</span>
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-4 space-y-3 text-sm">
         <div className="flex items-center">
@@ -51,7 +62,6 @@ export function EventCard({ event, users, expenses }: EventCardProps) {
           )}
         </div>
       </CardContent>
-      {/* Future: Add CardFooter for actions like 'View Details' or 'Settle Up' */}
     </Card>
   );
 }
