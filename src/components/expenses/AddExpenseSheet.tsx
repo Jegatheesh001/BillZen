@@ -55,8 +55,10 @@ interface AddExpenseSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_empty_custom_category_";
-const NO_CATEGORY_VALUE = "_none_";
+const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_dummy_empty_custom_category_";
+const NO_CATEGORY_VALUE = "_no_category_";
+const NO_EVENT_VALUE = "_no_event_";
+
 
 export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
   const { users, events, addExpense: addAppDataExpense } = useAppData();
@@ -71,9 +73,9 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
       description: '',
       amount: 0,
       paidById: users[0]?.id || '',
-      participantIds: users.map(u => u.id), // Default to all users
-      eventId: '',
-      category: '', // Initially, category is an empty string (shows placeholder)
+      participantIds: users.map(u => u.id),
+      eventId: '', // Default to empty string to show placeholder for event select
+      category: '', // Default to empty string to show placeholder for category select
     },
   });
 
@@ -87,7 +89,8 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
     setIsCategorizing(true);
     try {
       const result = await categorizeExpense({ description });
-      setSuggestedCategories(result.categorySuggestions || []);
+      // Filter out any empty or whitespace-only strings from suggestions
+      setSuggestedCategories(result.categorySuggestions?.filter(cat => cat && cat.trim() !== '') || []);
     } catch (error) {
       console.error("AI categorization failed:", error);
       setSuggestedCategories([]);
@@ -112,28 +115,28 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
 
   function onSubmit(data: ExpenseFormValues) {
     let categoryToSave = data.category;
-
-    if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === '') {
-      // If "No Category" was selected, or if the custom input was cleared (making form value an empty string, showing placeholder)
+    if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === '' || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
       categoryToSave = undefined;
     }
-    // The DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE should not be selected as its item is disabled.
-    // Any other string value (suggested category or typed custom category) is kept as is.
 
-    addAppDataExpense({ ...data, category: categoryToSave });
+    let eventIdToSave = data.eventId;
+    if (eventIdToSave === NO_EVENT_VALUE || eventIdToSave === '') {
+      eventIdToSave = undefined;
+    }
+
+    addAppDataExpense({ ...data, category: categoryToSave, eventId: eventIdToSave });
     toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
     
-    // Reset form to default values, including category to ''
     form.reset({
         description: '',
         amount: 0,
         paidById: users[0]?.id || '',
         participantIds: users.map(u => u.id),
-        eventId: '',
+        eventId: '', 
         category: '', 
       });
     setSuggestedCategories([]);
-    setCustomCategory(''); // Also reset the local customCategory state
+    setCustomCategory('');
     onOpenChange(false);
   }
 
@@ -246,14 +249,14 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Event (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value || ''} >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Assign to an event" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">No Event</SelectItem> {/* This is fine, it's for a different Select */}
+                      <SelectItem value={NO_EVENT_VALUE}>No Event</SelectItem>
                       {events.map(event => (
                         <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>
                       ))}
@@ -270,7 +273,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                 <FormItem>
                   <FormLabel>Category</FormLabel>
                   {isCategorizing && <Loader2 className="h-4 w-4 animate-spin inline-block ml-2" />}
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value || ''}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a category" />
@@ -281,7 +284,6 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
                       {suggestedCategories.length > 0 && <hr className="my-1"/>}
-                      {/* Ensure customCategory item has non-empty value. It's disabled if customCategory is empty. */}
                       <SelectItem 
                         value={customCategory || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
                         disabled={!customCategory}
@@ -297,7 +299,10 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                     onChange={(e) => {
                       const typedValue = e.target.value;
                       setCustomCategory(typedValue);
-                      field.onChange(typedValue); // Set form value to custom if typed
+                      // If user types a custom category, select it in the dropdown.
+                      // If they clear it, the dropdown will show the placeholder due to value={field.value || ''}
+                      // and the DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE item will be selected (but disabled).
+                      field.onChange(typedValue || ''); // Pass '' to field.value to show placeholder
                     }}
                     className="mt-2"
                   />

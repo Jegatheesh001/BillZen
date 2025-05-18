@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview An expense categorization AI agent.
@@ -17,8 +18,8 @@ export type CategorizeExpenseInput = z.infer<typeof CategorizeExpenseInputSchema
 
 const CategorizeExpenseOutputSchema = z.object({
   categorySuggestions: z
-    .array(z.string())
-    .describe('An array of suggested categories for the expense.'),
+    .array(z.string().min(1, "Category suggestion cannot be empty."))
+    .describe('An array of suggested categories for the expense. Suggestions must be non-empty strings.'),
 });
 export type CategorizeExpenseOutput = z.infer<typeof CategorizeExpenseOutputSchema>;
 
@@ -30,7 +31,7 @@ const prompt = ai.definePrompt({
   name: 'categorizeExpensePrompt',
   input: {schema: CategorizeExpenseInputSchema},
   output: {schema: CategorizeExpenseOutputSchema},
-  prompt: `Given the following expense description, suggest up to 3 relevant categories.
+  prompt: `Given the following expense description, suggest up to 3 relevant, non-empty categories.
 
 Description: {{{description}}}
 
@@ -45,6 +46,10 @@ const categorizeExpenseFlow = ai.defineFlow(
   },
   async input => {
     const {output} = await prompt(input);
+    // Ensure no empty strings are returned, even if the model somehow bypasses schema (though schema should catch it)
+    if (output && output.categorySuggestions) {
+      output.categorySuggestions = output.categorySuggestions.filter(cat => cat && cat.trim() !== '');
+    }
     return output!;
   }
 );
