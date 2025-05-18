@@ -38,6 +38,7 @@ import { useAppData } from '@/context/AppDataContext';
 import { categorizeExpense } from '@/ai/flows/categorize-expense';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import type { Expense } from '@/lib/types';
 
 const expenseFormSchema = z.object({
   description: z.string().min(1, "Description is required."),
@@ -53,6 +54,7 @@ type ExpenseFormValues = z.infer<typeof expenseFormSchema>;
 interface AddExpenseSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  expenseToEdit?: Expense | null;
 }
 
 const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_dummy_empty_custom_category_";
@@ -60,8 +62,8 @@ const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
 
-export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
-  const { users, events, addExpense: addAppDataExpense } = useAppData();
+export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
+  const { users, events, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense } = useAppData();
   const { toast } = useToast();
   const [suggestedCategories, setSuggestedCategories] = useState<string[]>([]);
   const [isCategorizing, setIsCategorizing] = useState(false);
@@ -74,8 +76,8 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
       amount: 0,
       paidById: users[0]?.id || '',
       participantIds: users.map(u => u.id),
-      eventId: '', // Default to empty string to show placeholder for event select
-      category: '', // Default to empty string to show placeholder for category select
+      eventId: '', 
+      category: '', 
     },
   });
 
@@ -89,7 +91,6 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
     setIsCategorizing(true);
     try {
       const result = await categorizeExpense({ description });
-      // Filter out any empty or whitespace-only strings from suggestions
       setSuggestedCategories(result.categorySuggestions?.filter(cat => cat && cat.trim() !== '') || []);
     } catch (error) {
       console.error("AI categorization failed:", error);
@@ -106,12 +107,51 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
-      if (watchedDescription) {
+      if (watchedDescription && open && !form.formState.isDirty && !expenseToEdit) { // Only auto-categorize for new, un-edited descriptions
         handleCategorize(watchedDescription);
       }
-    }, 1000); // Debounce AI call
+    }, 1000); 
     return () => clearTimeout(debounceTimer);
-  }, [watchedDescription, handleCategorize]);
+  }, [watchedDescription, handleCategorize, open, form.formState.isDirty, expenseToEdit]);
+
+  useEffect(() => {
+    if (open && expenseToEdit) {
+      form.reset({
+        description: expenseToEdit.description,
+        amount: expenseToEdit.amount,
+        paidById: expenseToEdit.paidById,
+        participantIds: expenseToEdit.participantIds,
+        eventId: expenseToEdit.eventId || '',
+        category: expenseToEdit.category || '',
+      });
+      if (expenseToEdit.category) {
+         // Fetch categories if description changes, or if it's an existing category
+        handleCategorize(expenseToEdit.description).then((cats) => {
+            const currentCats = cats || [];
+            if (expenseToEdit.category && !currentCats.includes(expenseToEdit.category!)){
+                 setCustomCategory(expenseToEdit.category!);
+            } else {
+                 setCustomCategory('');
+            }
+        });
+      } else {
+        setCustomCategory('');
+        handleCategorize(expenseToEdit.description); // Also categorize if no initial category
+      }
+    } else if (open && !expenseToEdit) { // Reset to defaults if opening for ADD
+      form.reset({
+        description: '',
+        amount: 0,
+        paidById: users[0]?.id || '',
+        participantIds: users.map(u => u.id),
+        eventId: '',
+        category: '',
+      });
+      setCustomCategory('');
+      setSuggestedCategories([]);
+    }
+  }, [open, expenseToEdit, form, users, handleCategorize]);
+
 
   function onSubmit(data: ExpenseFormValues) {
     let categoryToSave = data.category;
@@ -123,10 +163,18 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
     if (eventIdToSave === NO_EVENT_VALUE || eventIdToSave === '') {
       eventIdToSave = undefined;
     }
-
-    addAppDataExpense({ ...data, category: categoryToSave, eventId: eventIdToSave });
-    toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
     
+    const finalExpenseData = { ...data, category: categoryToSave, eventId: eventIdToSave };
+
+    if (expenseToEdit) {
+      updateAppDataExpense(expenseToEdit.id, finalExpenseData);
+      toast({ title: "Expense Updated", description: `${data.description} has been updated.` });
+    } else {
+      addAppDataExpense(finalExpenseData);
+      toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
+    }
+    
+    // Reset form to pristine state for a new entry
     form.reset({
         description: '',
         amount: 0,
@@ -137,8 +185,14 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
       });
     setSuggestedCategories([]);
     setCustomCategory('');
-    onOpenChange(false);
+    onOpenChange(false); // This also triggers parent to set expenseToEdit to null
   }
+  
+  const sheetTitle = expenseToEdit ? "Edit Expense" : "Add New Expense";
+  const sheetDescription = expenseToEdit 
+    ? "Modify the details of the expense."
+    : "Fill in the details of the expense. Click save when you're done.";
+  const submitButtonText = expenseToEdit ? "Save Changes" : "Save Expense";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -146,10 +200,8 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
         <ScrollArea className="h-full">
         <div className="p-6">
         <SheetHeader>
-          <SheetTitle>Add New Expense</SheetTitle>
-          <SheetDescription>
-            Fill in the details of the expense. Click save when you&apos;re done.
-          </SheetDescription>
+          <SheetTitle>{sheetTitle}</SheetTitle>
+          <SheetDescription>{sheetDescription}</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
@@ -185,7 +237,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Paid by</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select who paid" />
@@ -249,7 +301,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Event (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || ''} >
+                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} >
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Assign to an event" />
@@ -273,7 +325,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                 <FormItem>
                   <FormLabel>Category</FormLabel>
                   {isCategorizing && <Loader2 className="h-4 w-4 animate-spin inline-block ml-2" />}
-                  <Select onValueChange={field.onChange} value={field.value || ''}>
+                  <Select onValueChange={field.onChange} value={field.value || NO_CATEGORY_VALUE}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a category" />
@@ -283,12 +335,12 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                       {suggestedCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
-                      {suggestedCategories.length > 0 && <hr className="my-1"/>}
+                      {suggestedCategories.length > 0 && (customCategory || suggestedCategories.filter(sc => sc.trim()).length > 0) && <hr className="my-1"/>}
                       <SelectItem 
                         value={customCategory || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
-                        disabled={!customCategory}
+                        disabled={!customCategory.trim()} // Disable if customCategory is empty or just whitespace
                       >
-                        {customCategory || "Enter custom below"}
+                        {customCategory.trim() || "Enter custom below"}
                       </SelectItem>
                       <SelectItem value={NO_CATEGORY_VALUE}>No Category</SelectItem>
                     </SelectContent>
@@ -299,10 +351,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
                     onChange={(e) => {
                       const typedValue = e.target.value;
                       setCustomCategory(typedValue);
-                      // If user types a custom category, select it in the dropdown.
-                      // If they clear it, the dropdown will show the placeholder due to value={field.value || ''}
-                      // and the DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE item will be selected (but disabled).
-                      field.onChange(typedValue || ''); // Pass '' to field.value to show placeholder
+                      field.onChange(typedValue.trim() || ''); 
                     }}
                     className="mt-2"
                   />
@@ -314,7 +363,7 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
               <SheetClose asChild>
                 <Button type="button" variant="outline">Cancel</Button>
               </SheetClose>
-              <Button type="submit">Save Expense</Button>
+              <Button type="submit">{submitButtonText}</Button>
             </SheetFooter>
           </form>
         </Form>
@@ -324,4 +373,3 @@ export function AddExpenseSheet({ open, onOpenChange }: AddExpenseSheetProps) {
     </Sheet>
   );
 }
-

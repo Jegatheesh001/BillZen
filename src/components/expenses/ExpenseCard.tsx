@@ -1,19 +1,22 @@
+
 "use client";
 
 import type { Expense as ExpenseType, User } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { Coins, Tag, Users, CalendarIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Coins, Tag, Users, CalendarIcon, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ExpenseCardProps {
   expense: ExpenseType;
   users: User[];
   eventName?: string;
+  onEdit: (expense: ExpenseType) => void;
 }
 
-export function ExpenseCard({ expense, users, eventName }: ExpenseCardProps) {
+export function ExpenseCard({ expense, users, eventName, onEdit }: ExpenseCardProps) {
   const paidBy = users.find(u => u.id === expense.paidById);
   const participants = users.filter(u => expense.participantIds.includes(u.id));
 
@@ -22,9 +25,15 @@ export function ExpenseCard({ expense, users, eventName }: ExpenseCardProps) {
       <CardHeader className="bg-card/50 p-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold text-foreground">{expense.description}</CardTitle>
-          <Badge variant="secondary" className="text-sm font-bold">
-            ${expense.amount.toFixed(2)}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="secondary" className="text-sm font-bold">
+              ${expense.amount.toFixed(2)}
+            </Badge>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(expense)}>
+              <Pencil className="h-4 w-4" />
+              <span className="sr-only">Edit expense</span>
+            </Button>
+          </div>
         </div>
         {expense.category && (
           <div className="flex items-center text-xs text-muted-foreground mt-1">

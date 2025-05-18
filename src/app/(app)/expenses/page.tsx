@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
@@ -10,9 +11,11 @@ import { DebtSummary } from '@/components/expenses/DebtSummary';
 import { useAppData } from '@/context/AppDataContext';
 import { calculateDebts } from '@/lib/debt-utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { Expense } from '@/lib/types';
 
 export default function ExpensesPage() {
-  const [isAddExpenseSheetOpen, setIsAddExpenseSheetOpen] = useState(false);
+  const [isExpenseSheetOpen, setIsExpenseSheetOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const { expenses, users, events } = useAppData();
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -27,11 +30,28 @@ export default function ExpensesPage() {
     );
   }, [expenses, searchTerm, users]);
 
+  const handleAddExpenseClick = () => {
+    setEditingExpense(null);
+    setIsExpenseSheetOpen(true);
+  };
+
+  const handleEditExpenseClick = (expense: Expense) => {
+    setEditingExpense(expense);
+    setIsExpenseSheetOpen(true);
+  };
+
+  const handleSheetOpenChange = (isOpen: boolean) => {
+    setIsExpenseSheetOpen(isOpen);
+    if (!isOpen) {
+      setEditingExpense(null); // Clear editing expense when sheet is closed
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-semibold">Expenses</h2>
-        <Button onClick={() => setIsAddExpenseSheetOpen(true)} size="sm" className="rounded-full">
+        <Button onClick={handleAddExpenseClick} size="sm" className="rounded-full">
           <PlusCircle className="mr-2 h-5 w-5" /> Add Expense
         </Button>
       </div>
@@ -59,14 +79,26 @@ export default function ExpensesPage() {
             <div className="space-y-4 pr-2">
             {filteredExpenses.map(expense => {
               const eventName = events.find(e => e.id === expense.eventId)?.name;
-              return <ExpenseCard key={expense.id} expense={expense} users={users} eventName={eventName} />;
+              return (
+                <ExpenseCard 
+                  key={expense.id} 
+                  expense={expense} 
+                  users={users} 
+                  eventName={eventName}
+                  onEdit={handleEditExpenseClick} 
+                />
+              );
             })}
             </div>
           </ScrollArea>
         )}
       </div>
 
-      <AddExpenseSheet open={isAddExpenseSheetOpen} onOpenChange={setIsAddExpenseSheetOpen} />
+      <AddExpenseSheet 
+        open={isExpenseSheetOpen} 
+        onOpenChange={handleSheetOpenChange}
+        expenseToEdit={editingExpense} 
+      />
     </div>
   );
 }

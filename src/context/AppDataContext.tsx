@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { ReactNode } from 'react';
@@ -17,6 +18,7 @@ interface AppDataContextState {
   currentUser: User | null;
   addUser: (name: string, avatarUrl?: string) => User;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'>) => Expense;
+  updateExpense: (expenseId: string, updatedData: Omit<Expense, 'id' | 'date'>) => void;
   addEvent: (eventData: Omit<Event, 'id'>) => Event;
   updateUser: (userId: string, name: string, avatarUrl?: string) => void;
   setCurrentUserById: (userId: string | null) => void;
@@ -48,6 +50,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     };
     setExpenses(prev => [newExpense, ...prev]);
     return newExpense;
+  }, []);
+
+  const updateExpense = useCallback((expenseId: string, updatedData: Omit<Expense, 'id' | 'date'>) => {
+    setExpenses(prevExpenses =>
+      prevExpenses.map(expense =>
+        expense.id === expenseId
+          ? { ...expense, ...updatedData } // Preserve original id and date
+          : expense
+      )
+    );
   }, []);
   
   const addEvent = useCallback((eventData: Omit<Event, 'id'>): Event => {
@@ -86,10 +98,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     currentUser,
     addUser,
     addExpense,
+    updateExpense,
     addEvent,
     updateUser,
     setCurrentUserById,
-  }), [users, expenses, events, currentUser, addUser, addExpense, addEvent, updateUser, setCurrentUserById]);
+  }), [users, expenses, events, currentUser, addUser, addExpense, updateExpense, addEvent, updateUser, setCurrentUserById]);
 
   return (
     <AppDataContext.Provider value={contextValue}>
