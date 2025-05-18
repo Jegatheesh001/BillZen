@@ -25,7 +25,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <AddUserForm />
-          <div>
+          <div key={`user-list-${users.length}`}> {/* Added dynamic key here */}
             <h3 className="text-md font-medium mt-6 mb-2">Current Users:</h3>
             {users.length > 0 ? (
               <ScrollArea className="h-40">
