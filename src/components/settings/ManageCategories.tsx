@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit3, Trash2, XCircle, CheckCircle } from 'lucide-react';
+import { PlusCircle, Edit3, Trash2, XCircle, CheckCircle, Loader2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,25 +33,33 @@ import { Label } from '@/components/ui/label';
 
 
 export function ManageCategories() {
-  const { categories, addCategory, updateCategory, removeCategory } = useAppData();
+  const { categories, addCategory, updateCategory, removeCategory, isLoading, persistenceMode } = useAppData();
   const [newCategory, setNewCategory] = useState('');
   const { toast } = useToast();
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<string | null>(null);
   const [editedCategoryName, setEditedCategoryName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local loading state for category actions
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategory.trim()) {
       toast({ title: "Error", description: "Category name cannot be empty.", variant: "destructive" });
       return;
     }
-    const success = addCategory(newCategory);
-    if (success) {
-      toast({ title: "Category Added", description: `"${newCategory}" has been added.` });
-      setNewCategory('');
-    } else {
-      toast({ title: "Already Exists", description: `Category "${newCategory}" already exists.`, variant: "destructive" });
+    setIsSubmitting(true);
+    try {
+      const success = await addCategory(newCategory);
+      if (success) {
+        toast({ title: "Category Added", description: `"${newCategory}" has been added.` });
+        setNewCategory('');
+      } else {
+        toast({ title: "Already Exists or API Error", description: `Category "${newCategory}" may already exist or an API error occurred.`, variant: "destructive" });
+      }
+    } catch (error: any) {
+       toast({ title: "Error Adding Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -61,35 +69,51 @@ export function ManageCategories() {
     setIsEditDialogOpen(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!categoryToEdit || !editedCategoryName.trim()) {
       toast({ title: "Error", description: "Category name cannot be empty.", variant: "destructive" });
       return;
     }
     if (editedCategoryName.trim().toLowerCase() === categoryToEdit.toLowerCase()) {
-       setIsEditDialogOpen(false); // Name hasn't changed
+       setIsEditDialogOpen(false); 
        return;
     }
-    const success = updateCategory(categoryToEdit, editedCategoryName);
-    if (success) {
-      toast({ title: "Category Updated", description: `"${categoryToEdit}" updated to "${editedCategoryName}".` });
-    } else {
-       toast({ title: "Already Exists", description: `Category "${editedCategoryName}" already exists.`, variant: "destructive" });
+    setIsSubmitting(true);
+    try {
+      const success = await updateCategory(categoryToEdit, editedCategoryName);
+      if (success) {
+        toast({ title: "Category Updated", description: `"${categoryToEdit}" updated to "${editedCategoryName}".` });
+      } else {
+         toast({ title: "Already Exists or API Error", description: `Category "${editedCategoryName}" may already exist or an API error occurred.`, variant: "destructive" });
+      }
+    } catch (error: any) {
+       toast({ title: "Error Updating Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+      setIsEditDialogOpen(false);
+      setCategoryToEdit(null);
     }
-    setIsEditDialogOpen(false);
-    setCategoryToEdit(null);
   };
 
-  const handleRemoveCategory = (categoryName: string) => {
-    removeCategory(categoryName);
-    toast({ title: "Category Removed", description: `"${categoryName}" has been removed.` });
+  const handleRemoveCategory = async (categoryName: string) => {
+    setIsSubmitting(true);
+    try {
+      await removeCategory(categoryName);
+      toast({ title: "Category Removed", description: `"${categoryName}" has been removed.` });
+    } catch (error: any) {
+       toast({ title: "Error Removing Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+  
+  const combinedLoading = isLoading || isSubmitting;
 
   return (
     <Card className="shadow-lg rounded-xl">
       <CardHeader>
         <CardTitle>Manage Expense Categories</CardTitle>
-        <CardDescription>Add, edit, or remove expense categories.</CardDescription>
+        <CardDescription>Add, edit, or remove expense categories. Current mode: {persistenceMode}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex gap-2 items-end">
@@ -102,6 +126,7 @@ export function ManageCategories() {
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               className="w-full"
+              disabled={combinedLoading}
             />
           </div>
           <Button 
@@ -110,8 +135,9 @@ export function ManageCategories() {
             variant="outline" 
             aria-label="Add new category"
             title="Add new category"
+            disabled={combinedLoading}
           >
-            <PlusCircle className="h-5 w-5" />
+            {combinedLoading && !isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
           </Button>
         </div>
 
@@ -127,13 +153,13 @@ export function ManageCategories() {
                   >
                     <span>{category}</span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={combinedLoading}>
                         <Edit3 className="h-4 w-4" />
                          <span className="sr-only">Edit {category}</span>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive">
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={combinedLoading}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Remove {category}</span>
                           </Button>
@@ -146,8 +172,13 @@ export function ManageCategories() {
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleRemoveCategory(category)} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                            <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction 
+                              onClick={() => handleRemoveCategory(category)} 
+                              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                              disabled={isSubmitting}
+                            >
+                              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                               Remove
                             </AlertDialogAction>
                           </AlertDialogFooter>
@@ -159,13 +190,14 @@ export function ManageCategories() {
               </ul>
             </ScrollArea>
           ) : (
-            <p className="text-sm text-muted-foreground text-center py-4">No categories defined yet. Add some!</p>
+            <p className="text-sm text-muted-foreground text-center py-4">
+              {isLoading && persistenceMode === 'api' ? 'Loading categories...' : 'No categories defined yet. Add some!'}
+            </p>
           )}
         </div>
       </CardContent>
 
-      {/* Edit Category Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { if (!isSubmitting) setIsEditDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Category</DialogTitle>
@@ -180,15 +212,17 @@ export function ManageCategories() {
               value={editedCategoryName}
               onChange={(e) => setEditedCategoryName(e.target.value)}
               placeholder="Enter new category name"
+              disabled={isSubmitting}
             />
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" onClick={() => setCategoryToEdit(null)}>
+              <Button variant="outline" onClick={() => { if (!isSubmitting) setCategoryToEdit(null);}} disabled={isSubmitting}>
                 <XCircle className="mr-2 h-4 w-4" /> Cancel
               </Button>
             </DialogClose>
-            <Button onClick={handleSaveEdit}>
+            <Button onClick={handleSaveEdit} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle className="mr-2 h-4 w-4" /> Save Changes
             </Button>
           </DialogFooter>

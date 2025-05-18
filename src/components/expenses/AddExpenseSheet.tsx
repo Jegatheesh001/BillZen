@@ -36,6 +36,7 @@ import {
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
 import type { Expense } from '@/lib/types';
+import { Loader2 } from 'lucide-react';
 
 const expenseFormSchema = z.object({
   description: z.string().min(1, "Description is required."),
@@ -59,9 +60,20 @@ const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
 export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
-  const { users, events, categories, addCategory, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense, currentUser } = useAppData();
+  const { 
+    users, 
+    events, 
+    categories, 
+    addCategory, 
+    addExpense: addAppDataExpense, 
+    updateExpense: updateAppDataExpense, 
+    currentUser,
+    isLoading, // Global loading state from context
+    persistenceMode 
+  } = useAppData();
   const { toast } = useToast();
   const [customCategoryInput, setCustomCategoryInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -70,8 +82,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       amount: 0,
       paidById: currentUser?.id || users[0]?.id || '',
       participantIds: users.map(u => u.id),
-      eventId: '',
-      category: '',
+      eventId: NO_EVENT_VALUE,
+      category: NO_CATEGORY_VALUE,
     },
   });
 
@@ -85,9 +97,6 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         eventId: expenseToEdit.eventId || NO_EVENT_VALUE,
         category: expenseToEdit.category || NO_CATEGORY_VALUE,
       });
-      // If the category being edited is not in the predefined list, it's a custom one.
-      // We don't need to set customCategoryInput here as it's primarily for *new* custom categories.
-      // The Select component will handle displaying it if it matches a value.
       setCustomCategoryInput(''); 
     } else if (open && !expenseToEdit) { 
       form.reset({
@@ -103,43 +112,54 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
   }, [open, expenseToEdit, form, users, currentUser]);
 
 
-  function onSubmit(data: ExpenseFormValues) {
-    let categoryToSave = data.category;
+  async function onSubmit(data: ExpenseFormValues) {
+    setIsSubmitting(true);
+    try {
+      let categoryToSave = data.category;
 
-    if (customCategoryInput.trim()) { // Prioritize typed custom category
-      categoryToSave = customCategoryInput.trim();
-      if (!categories.find(c => c.toLowerCase() === categoryToSave!.toLowerCase())) {
-        addCategory(categoryToSave!); // Add to global list if new
+      if (customCategoryInput.trim()) { 
+        categoryToSave = customCategoryInput.trim();
+        if (!categories.find(c => c.toLowerCase() === categoryToSave!.toLowerCase())) {
+          await addCategory(categoryToSave!); 
+        }
+      } else if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
+        categoryToSave = undefined;
       }
-    } else if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
-      categoryToSave = undefined;
-    }
-    
-    let eventIdToSave = data.eventId;
-    if (eventIdToSave === NO_EVENT_VALUE || eventIdToSave === '') {
-      eventIdToSave = undefined;
-    }
-    
-    const finalExpenseData = { ...data, category: categoryToSave, eventId: eventIdToSave };
+      
+      let eventIdToSave = data.eventId;
+      if (eventIdToSave === NO_EVENT_VALUE || eventIdToSave === '') {
+        eventIdToSave = undefined;
+      }
+      
+      const finalExpenseData = { ...data, category: categoryToSave, eventId: eventIdToSave };
 
-    if (expenseToEdit) {
-      updateAppDataExpense(expenseToEdit.id, finalExpenseData);
-      toast({ title: "Expense Updated", description: `${data.description} has been updated.` });
-    } else {
-      addAppDataExpense(finalExpenseData);
-      toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
-    }
-    
-    form.reset({
-        description: '',
-        amount: 0,
-        paidById: currentUser?.id || users[0]?.id || '',
-        participantIds: users.map(u => u.id),
-        eventId: NO_EVENT_VALUE,
-        category: NO_CATEGORY_VALUE,
+      if (expenseToEdit) {
+        await updateAppDataExpense(expenseToEdit.id, finalExpenseData);
+        toast({ title: "Expense Updated", description: `${data.description} has been updated.` });
+      } else {
+        await addAppDataExpense(finalExpenseData);
+        toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
+      }
+      
+      form.reset({
+          description: '',
+          amount: 0,
+          paidById: currentUser?.id || users[0]?.id || '',
+          participantIds: users.map(u => u.id),
+          eventId: NO_EVENT_VALUE,
+          category: NO_CATEGORY_VALUE,
+        });
+      setCustomCategoryInput('');
+      onOpenChange(false); 
+    } catch (error: any) {
+      toast({
+        title: expenseToEdit ? "Failed to Update Expense" : "Failed to Add Expense",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
       });
-    setCustomCategoryInput('');
-    onOpenChange(false); 
+    } finally {
+      setIsSubmitting(false);
+    }
   }
   
   const sheetTitle = expenseToEdit ? "Edit Expense" : "Add New Expense";
@@ -151,10 +171,11 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
   const currentCategoryValue = form.watch('category');
   const displayCategories = [...categories];
   if (expenseToEdit?.category && !categories.includes(expenseToEdit.category)) {
-    // If editing and the expense has a category not in the global list, add it for selection
     displayCategories.push(expenseToEdit.category);
     displayCategories.sort();
   }
+
+  const formDisabled = isLoading || isSubmitting;
 
 
   return (
@@ -164,7 +185,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         <div className="p-6">
         <SheetHeader>
           <SheetTitle>{sheetTitle}</SheetTitle>
-          <SheetDescription>{sheetDescription}</SheetDescription>
+          <SheetDescription>{sheetDescription} (Mode: {persistenceMode})</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
@@ -175,7 +196,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Input placeholder="e.g., Dinner tacos" {...field} />
+                    <Input placeholder="e.g., Dinner tacos" {...field} disabled={formDisabled}/>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -188,7 +209,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                 <FormItem>
                   <FormLabel>Amount ($)</FormLabel>
                   <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                    <Input type="number" step="0.01" placeholder="0.00" {...field} disabled={formDisabled}/>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -200,7 +221,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Paid by</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={formDisabled}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select who paid" />
@@ -244,6 +265,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                                             )
                                           )
                                     }}
+                                    disabled={formDisabled}
                                   />
                                 </FormControl>
                                 <FormLabel className="font-normal">
@@ -266,7 +288,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Event (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} >
+                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} disabled={formDisabled}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Assign to an event" />
@@ -293,10 +315,11 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                     onValueChange={(value) => {
                       field.onChange(value);
                       if (value !== DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
-                        setCustomCategoryInput(''); // Clear custom input if a select option is chosen
+                        setCustomCategoryInput(''); 
                       }
                     }} 
                     value={customCategoryInput.trim() ? DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE : field.value || NO_CATEGORY_VALUE}
+                    disabled={formDisabled}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -308,10 +331,9 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                       {displayCategories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
-                      {/* This item represents the custom input. It's selected if custom input has text. */}
                       <SelectItem 
                         value={DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE}
-                        className={customCategoryInput.trim() ? '' : 'hidden'} // Show if custom input has text
+                        className={customCategoryInput.trim() ? '' : 'hidden'} 
                       >
                         {customCategoryInput.trim() || "Custom..."} 
                       </SelectItem>
@@ -323,15 +345,14 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                     onChange={(e) => {
                       const typedValue = e.target.value;
                       setCustomCategoryInput(typedValue);
-                      // If user types, select the dummy "custom" item to indicate custom input is active
                       if (typedValue.trim()) {
                         field.onChange(DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE); 
                       } else if (currentCategoryValue === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
-                        // If input is cleared and dummy was selected, revert to "No Category"
                         field.onChange(NO_CATEGORY_VALUE);
                       }
                     }}
                     className="mt-2"
+                    disabled={formDisabled}
                   />
                   <FormMessage />
                 </FormItem>
@@ -339,9 +360,12 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
             />
             <SheetFooter className="pt-4">
               <SheetClose asChild>
-                <Button type="button" variant="outline">Cancel</Button>
+                <Button type="button" variant="outline" disabled={formDisabled}>Cancel</Button>
               </SheetClose>
-              <Button type="submit">{submitButtonText}</Button>
+              <Button type="submit" disabled={formDisabled}>
+                {formDisabled && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {submitButtonText}
+              </Button>
             </SheetFooter>
           </form>
         </Form>

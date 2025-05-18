@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -29,6 +29,7 @@ import {
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
 import type { Event, EventFormData } from '@/lib/types';
+import { Loader2 } from 'lucide-react';
 
 const eventFormSchema = z.object({
   name: z.string().min(1, "Event name is required."),
@@ -44,8 +45,16 @@ interface AddEventSheetProps {
 }
 
 export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheetProps) {
-  const { users, addEvent: addAppDataEvent, updateEvent: updateAppDataEvent } = useAppData();
+  const { 
+    users, 
+    addEvent: addAppDataEvent, 
+    updateEvent: updateAppDataEvent, 
+    isLoading, // Global loading state
+    persistenceMode 
+  } = useAppData();
   const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
+
 
   const form = useForm<EventFormValues>({
     resolver: zodResolver(eventFormSchema),
@@ -64,22 +73,33 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     } else if (open && !eventToEdit) {
       form.reset({
         name: '',
-        memberIds: users.map(u => u.id), // Default to all users
+        memberIds: users.map(u => u.id), 
       });
     }
   }, [open, eventToEdit, form, users]);
 
-  function onSubmit(data: EventFormValues) {
-    const eventData: EventFormData = data;
-    if (eventToEdit) {
-      updateAppDataEvent(eventToEdit.id, eventData);
-      toast({ title: "Event Updated", description: `${data.name} has been updated.` });
-    } else {
-      addAppDataEvent(eventData);
-      toast({ title: "Event Created", description: `${data.name} has been created.` });
+  async function onSubmit(data: EventFormValues) {
+    setIsSubmitting(true);
+    try {
+      const eventData: EventFormData = data;
+      if (eventToEdit) {
+        await updateAppDataEvent(eventToEdit.id, eventData);
+        toast({ title: "Event Updated", description: `${data.name} has been updated.` });
+      } else {
+        await addAppDataEvent(eventData);
+        toast({ title: "Event Created", description: `${data.name} has been created.` });
+      }
+      form.reset({ name: '', memberIds: users.map(u => u.id) });
+      onOpenChange(false);
+    } catch (error: any) {
+      toast({
+        title: eventToEdit ? "Failed to Update Event" : "Failed to Create Event",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-    form.reset({ name: '', memberIds: users.map(u => u.id) });
-    onOpenChange(false);
   }
   
   const sheetTitle = eventToEdit ? "Edit Event" : "Create New Event";
@@ -87,6 +107,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     ? "Modify the details of the event."
     : "Group expenses by creating an event. Select members for this event.";
   const submitButtonText = eventToEdit ? "Save Changes" : "Create Event";
+  const formDisabled = isLoading || isSubmitting;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -96,7 +117,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
             <SheetHeader>
               <SheetTitle>{sheetTitle}</SheetTitle>
               <SheetDescription>
-                {sheetDescription}
+                {sheetDescription} (Mode: {persistenceMode})
               </SheetDescription>
             </SheetHeader>
             <Form {...form}>
@@ -108,7 +129,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
                     <FormItem>
                       <FormLabel>Event Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Road Trip, Birthday Party" {...field} />
+                        <Input placeholder="e.g., Road Trip, Birthday Party" {...field} disabled={formDisabled}/>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -141,6 +162,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
                                               )
                                             );
                                       }}
+                                      disabled={formDisabled}
                                     />
                                   </FormControl>
                                   <FormLabel className="font-normal">
@@ -158,9 +180,12 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
                 />
                 <SheetFooter className="pt-4">
                   <SheetClose asChild>
-                    <Button type="button" variant="outline">Cancel</Button>
+                    <Button type="button" variant="outline" disabled={formDisabled}>Cancel</Button>
                   </SheetClose>
-                  <Button type="submit">{submitButtonText}</Button>
+                  <Button type="submit" disabled={formDisabled}>
+                    {formDisabled && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {submitButtonText}
+                  </Button>
                 </SheetFooter>
               </form>
             </Form>

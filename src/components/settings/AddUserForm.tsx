@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/form';
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
+import { Loader2 } from 'lucide-react';
 
 const addUserFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -26,7 +27,7 @@ const addUserFormSchema = z.object({
 type AddUserFormValues = z.infer<typeof addUserFormSchema>;
 
 export function AddUserForm() {
-  const { addUser } = useAppData();
+  const { addUser, isLoading, persistenceMode } = useAppData();
   const { toast } = useToast();
 
   const form = useForm<AddUserFormValues>({
@@ -37,13 +38,21 @@ export function AddUserForm() {
     },
   });
 
-  function onSubmit(data: AddUserFormValues) {
-    const newUser = addUser(data.name, data.avatarUrl || undefined); // Pass undefined if empty for default avatar
-    toast({
-      title: "User Added",
-      description: `${newUser.name} has been added.`,
-    });
-    form.reset();
+  async function onSubmit(data: AddUserFormValues) {
+    try {
+      const newUser = await addUser(data.name, data.avatarUrl || undefined);
+      toast({
+        title: "User Added",
+        description: `${newUser.name} has been added ${persistenceMode === 'api' ? 'via API' : 'locally'}.`,
+      });
+      form.reset();
+    } catch (error: any) {
+      toast({
+        title: "Failed to Add User",
+        description: error.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    }
   }
 
   return (
@@ -56,7 +65,7 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>User Name</FormLabel>
               <FormControl>
-                <Input placeholder="Enter user's name" {...field} />
+                <Input placeholder="Enter user's name" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -69,13 +78,16 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>Avatar URL (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="https://example.com/avatar.png" {...field} />
+                <Input placeholder="https://example.com/avatar.png" {...field} disabled={isLoading} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full sm:w-auto">Add User</Button>
+        <Button type="submit" className="w-full sm:w-auto" disabled={isLoading}>
+          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          Add User
+        </Button>
       </form>
     </Form>
   );
