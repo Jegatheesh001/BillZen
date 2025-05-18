@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react'; // Added useState
+import React, { useState } from 'react';
 import type { Debt } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,8 +20,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Input } from "@/components/ui/input"; // Added Input
-import { Label } from "@/components/ui/label"; // Added Label
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface DebtSummaryProps {
   debts: Debt[];
@@ -57,7 +57,7 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
   
   const openSettleDialog = (debtEntry: Debt) => {
     setCurrentDebtEntryForDialog(debtEntry);
-    setSettlementAmountInput(Math.abs(debtEntry.balance).toFixed(2));
+    setSettlementAmountInput(Math.abs(debtEntry.balance).toFixed(2)); // debt.balance will be negative here
     setSettlementError('');
   };
 
@@ -92,29 +92,18 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
     }
     setSettlementError('');
 
-    let payerId: string, recipientId: string, payerName: string, recipientName: string;
-
-    if (currentDebtEntryForDialog.balance > 0) { // Other user owes current user
-      payerId = otherUser.id;
-      recipientId = currentUser.id;
-      payerName = otherUser.name;
-      recipientName = currentUser.name;
-    } else { // Current user owes other user
-      // This case should ideally not be reached if the settle button is only shown for debt.balance > 0
-      // However, keeping the logic for completeness or future changes.
-      payerId = currentUser.id;
-      recipientId = otherUser.id;
-      payerName = currentUser.name;
-      recipientName = otherUser.name;
-    }
+    // If showSettleButton is true, currentDebtEntryForDialog.balance < 0, meaning currentUser owes otherUser.
+    // Therefore, currentUser is the payer.
+    const payerId: string = currentUser.id;
+    const recipientId: string = otherUser.id;
+    const payerName: string = currentUser.name;
+    const recipientName: string = otherUser.name;
 
     addSettlement({ payerId, recipientId, amount: amountToSettle, payerName, recipientName });
     toast({
       title: "Settlement Recorded",
-      description: `Settlement of $${amountToSettle.toFixed(2)} between ${payerName} and ${recipientName} recorded.`,
+      description: `Settlement of $${amountToSettle.toFixed(2)} from ${payerName} to ${recipientName} recorded.`,
     });
-    // The AlertDialog will close itself via AlertDialogAction, no need to manually close here
-    // Resetting state will happen when dialog is re-opened or onOpenChange if we control it that way
   };
   
   return (
@@ -137,11 +126,12 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                 if (isCurrentUserEntry) {
                     namePrefix = "Your Overall Balance";
                     if (debt.balance === 0) balanceTextSuffix = '(Settled with the group)';
-                    else if (debt.balance > 0) balanceTextSuffix = `(Owed by group)`;
-                    else balanceTextSuffix = `(Owes to group)`;
+                    else if (debt.balance > 0) balanceTextSuffix = `(Owed by group)`; // Green
+                    else balanceTextSuffix = `(Owes to group)`; // Red
                 } else { 
-                    if (debt.balance > 0) balanceTextSuffix = `(Owes you)`;
-                    else balanceTextSuffix = `(You owe)`;
+                    // For other users, relative to current user
+                    if (debt.balance > 0) balanceTextSuffix = `(Owes you)`; // Green (Other user owes current user)
+                    else balanceTextSuffix = `(You owe)`; // Red (Current user owes other user)
                 }
             } else { 
                 if (debt.balance === 0) balanceTextSuffix = '(Settled)';
@@ -149,8 +139,8 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                 else balanceTextSuffix = `(owes)`;
             }
             
-            // Show settle button only if the other user owes the current user (debt.balance > 0 for the other user's entry)
-            const showSettleButton = currentUserId && !isCurrentUserEntry && debt.balance > 0;
+            // Show settle button if current user owes this other user (debt.balance < 0 for this other user's entry)
+            const showSettleButton = currentUserId && !isCurrentUserEntry && debt.balance < 0;
 
             return (
               <li key={debt.userId} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
@@ -183,8 +173,7 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Confirm Settlement</AlertDialogTitle>
                           <AlertDialogDescription>
-                            {/* This description will now always be for the "other user paid you" scenario if button visibility is debt.balance > 0 */}
-                            Record that {currentDebtEntryForDialog?.userName} has paid you.
+                            Record that you (<strong>{currentUser?.name}</strong>) have paid <strong>{currentDebtEntryForDialog?.userName}</strong>.
                             <br/>This will create a new "Settlement" expense.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
