@@ -100,6 +100,8 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
       payerName = otherUser.name;
       recipientName = currentUser.name;
     } else { // Current user owes other user
+      // This case should ideally not be reached if the settle button is only shown for debt.balance > 0
+      // However, keeping the logic for completeness or future changes.
       payerId = currentUser.id;
       recipientId = otherUser.id;
       payerName = currentUser.name;
@@ -147,7 +149,8 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                 else balanceTextSuffix = `(owes)`;
             }
             
-            const showSettleButton = currentUserId && !isCurrentUserEntry && debt.balance !== 0;
+            // Show settle button only if the other user owes the current user (debt.balance > 0 for the other user's entry)
+            const showSettleButton = currentUserId && !isCurrentUserEntry && debt.balance > 0;
 
             return (
               <li key={debt.userId} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
@@ -180,10 +183,8 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Confirm Settlement</AlertDialogTitle>
                           <AlertDialogDescription>
-                            {currentDebtEntryForDialog?.balance && currentDebtEntryForDialog.balance > 0 
-                              ? `Record that ${currentDebtEntryForDialog.userName} has paid you.`
-                              : `Record that you have paid ${currentDebtEntryForDialog?.userName}.`
-                            }
+                            {/* This description will now always be for the "other user paid you" scenario if button visibility is debt.balance > 0 */}
+                            Record that {currentDebtEntryForDialog?.userName} has paid you.
                             <br/>This will create a new "Settlement" expense.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -196,7 +197,6 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                             value={settlementAmountInput}
                             onChange={(e) => {
                                 setSettlementAmountInput(e.target.value);
-                                // Basic check to clear error if user starts correcting
                                 const val = parseFloat(e.target.value);
                                 const maxVal = currentDebtEntryForDialog ? parseFloat(Math.abs(currentDebtEntryForDialog.balance).toFixed(2)) : 0;
                                 if (!isNaN(val) && val > 0 && val <= maxVal) {
@@ -228,3 +228,4 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
     </Card>
   );
 }
+
