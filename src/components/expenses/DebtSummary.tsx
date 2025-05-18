@@ -71,11 +71,23 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
     const maxAmount = parseFloat(Math.abs(currentDebtEntryForDialog.balance).toFixed(2));
 
     if (isNaN(amountToSettle) || amountToSettle <= 0) {
-      setSettlementError("Please enter a valid positive amount.");
+      const errorMsg = "Please enter a valid positive amount.";
+      setSettlementError(errorMsg);
+      toast({
+        title: "Invalid Amount",
+        description: errorMsg,
+        variant: "destructive",
+      });
       return;
     }
     if (amountToSettle > maxAmount) {
-      setSettlementError(`Amount cannot exceed the debt of $${maxAmount.toFixed(2)}.`);
+      const errorMsg = `Amount cannot exceed the debt of $${maxAmount.toFixed(2)}.`;
+      setSettlementError(errorMsg);
+      toast({
+        title: "Over Settlement Attempted",
+        description: errorMsg,
+        variant: "destructive",
+      });
       return;
     }
     setSettlementError('');
