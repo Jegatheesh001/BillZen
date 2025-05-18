@@ -27,6 +27,7 @@ interface AppDataContextState {
   categories: string[];
   currentUser: User | null;
   persistenceMode: PersistenceMode;
+  apiBaseUrl: string;
   isLoading: boolean; // Global loading state for API operations
   error: string | null; // Global error state for API operations
   addUser: (name: string, avatarUrl?: string) => Promise<User>;
@@ -41,6 +42,7 @@ interface AppDataContextState {
   removeCategory: (categoryName: string) => Promise<void>;
   addSettlement: (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }) => Promise<Expense>;
   togglePersistenceMode: (newMode: PersistenceMode) => Promise<void>;
+  setApiBaseUrl: (newUrl: string) => void;
   clearError: () => void;
 }
 
@@ -53,6 +55,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<string[]>(INITIAL_CATEGORIES_DATA);
   const [currentUser, setCurrentUser] = useState<User | null>(DEFAULT_USERS_DATA[0] || null);
   const [persistenceMode, setPersistenceMode] = useState<PersistenceMode>('inMemory');
+  const [apiBaseUrl, setApiBaseUrlState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const storedUrl = localStorage.getItem('apiBaseUrl');
+      if (storedUrl) return storedUrl;
+    }
+    return process.env.NEXT_PUBLIC_API_BASE_URL || '/api'; // Default fallback
+  });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -67,16 +76,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setCurrentUser(DEFAULT_USERS_DATA[0] || null);
     setError(null);
   };
-
-  const loadDataFromApi = async () => {
+  
+  // Memoize loadDataFromApi to prevent re-creation on every render
+  const loadDataFromApi = useCallback(async (currentApiBaseUrl: string) => {
     setIsLoading(true);
     setError(null);
     try {
       const [apiUsers, apiExpenses, apiEvents, apiCategories] = await Promise.all([
-        apiClient.getUsers(),
-        apiClient.getExpenses(),
-        apiClient.getEvents(),
-        apiClient.getCategories(),
+        apiClient.getUsers(currentApiBaseUrl),
+        apiClient.getExpenses(currentApiBaseUrl),
+        apiClient.getEvents(currentApiBaseUrl),
+        apiClient.getCategories(currentApiBaseUrl),
       ]);
       setUsers(apiUsers || []);
       setExpenses(apiExpenses || []);
@@ -89,17 +99,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       } else {
         setCurrentUser(null);
       }
-      toast({ title: "Switched to API Mode", description: "Data loaded from API." });
+      toast({ title: "Switched to API Mode", description: `Data loaded from ${currentApiBaseUrl}.` });
     } catch (err: any) {
-      const errorMessage = err.message || 'Failed to load data from API';
+      const errorMessage = err.message || `Failed to load data from ${currentApiBaseUrl}`;
       setError(errorMessage);
       toast({ title: "API Error", description: errorMessage, variant: "destructive" });
-      // Optionally revert to inMemory or leave data empty
-      resetToInMemoryDefaults(); // Revert to in-memory if API load fails catastrophically
-      setPersistenceMode('inMemory'); // Force back to inMemory
+      resetToInMemoryDefaults();
+      setPersistenceMode('inMemory');
       localStorage.setItem('persistenceMode', 'inMemory');
     } finally {
       setIsLoading(false);
+    }
+  }, [toast]); // Removed resetToInMemoryDefaults and setPersistenceMode from deps as they are stable
+
+  const setApiBaseUrl = (newUrl: string) => {
+    const trimmedUrl = newUrl.trim().replace(/\/+$/, ""); // Remove trailing slashes
+    setApiBaseUrlState(trimmedUrl);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('apiBaseUrl', trimmedUrl);
+    }
+    if (persistenceMode === 'api') {
+      toast({ title: "API URL Updated", description: `Attempting to reload data from ${trimmedUrl}.` });
+      loadDataFromApi(trimmedUrl);
     }
   };
   
@@ -110,33 +131,32 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (savedMode) {
       setPersistenceMode(savedMode);
       if (savedMode === 'api') {
-        loadDataFromApi();
+        // apiBaseUrl is already initialized from localStorage or default by useState
+        loadDataFromApi(apiBaseUrl); 
       } else {
-        // For inMemory, ensure currentUser is set from localStorage or default
-        const userToSet = savedUserId ? users.find(u => u.id === savedUserId) : users[0];
-        setCurrentUser(userToSet || users[0] || null);
+        const userToSet = savedUserId ? DEFAULT_USERS_DATA.find(u => u.id === savedUserId) : DEFAULT_USERS_DATA[0];
+        setCurrentUser(userToSet || DEFAULT_USERS_DATA[0] || null);
       }
     } else {
-       // Default to inMemory, ensure currentUser is set
-       const userToSet = savedUserId ? users.find(u => u.id === savedUserId) : users[0];
-       setCurrentUser(userToSet || users[0] || null);
+       const userToSet = savedUserId ? DEFAULT_USERS_DATA.find(u => u.id === savedUserId) : DEFAULT_USERS_DATA[0];
+       setCurrentUser(userToSet || DEFAULT_USERS_DATA[0] || null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount
+  }, [loadDataFromApi, apiBaseUrl]); // apiBaseUrl needs to be a dependency here if loadDataFromApi depends on it implicitly or if it should re-run when apiBaseUrl is set programmatically.
 
   const togglePersistenceMode = useCallback(async (newMode: PersistenceMode) => {
-    setIsLoading(true); // Set loading true immediately for UX
+    setIsLoading(true);
     setPersistenceMode(newMode);
     localStorage.setItem('persistenceMode', newMode);
     if (newMode === 'api') {
-      await loadDataFromApi();
+      await loadDataFromApi(apiBaseUrl); // use the current state apiBaseUrl
     } else {
       resetToInMemoryDefaults();
-      setIsLoading(false); // Reset loading after in-memory defaults are set
+      setIsLoading(false);
       toast({ title: "Switched to In-Memory Mode", description: "Using local data." });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiBaseUrl, loadDataFromApi, toast]);
 
 
   const addUser = useCallback(async (name: string, avatarUrl?: string): Promise<User> => {
@@ -144,7 +164,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const newUser = await apiClient.addUser({ name, avatarUrl: avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}` });
+        const newUser = await apiClient.addUser(apiBaseUrl, { name, avatarUrl: avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}` });
         setUsers(prev => [...prev, newUser]);
         return newUser;
       } catch (err: any) {
@@ -162,15 +182,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setUsers(prev => [...prev, newUser]);
       return newUser;
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
 
   const addExpense = useCallback(async (expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
     setError(null);
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        // API should handle 'id' and 'date'
-        const newExpense = await apiClient.addExpense(expenseData);
+        const newExpense = await apiClient.addExpense(apiBaseUrl, expenseData);
         setExpenses(prev => [newExpense, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         return newExpense;
       } catch (err: any) {
@@ -188,14 +207,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setExpenses(prev => [newExpense, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
       return newExpense;
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
 
   const updateExpense = useCallback(async (expenseId: string, updatedData: Omit<Expense, 'id' | 'date'>) => {
     setError(null);
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const updatedExpense = await apiClient.updateExpense(expenseId, updatedData);
+        const updatedExpense = await apiClient.updateExpense(apiBaseUrl, expenseId, updatedData);
         setExpenses(prevExpenses =>
           prevExpenses.map(expense =>
             expense.id === expenseId ? { ...expense, ...updatedExpense } : expense
@@ -211,19 +230,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setExpenses(prevExpenses =>
         prevExpenses.map(expense =>
           expense.id === expenseId
-            ? { ...expense, ...updatedData, date: expense.date } // Keep original date unless API sends new one
+            ? { ...expense, ...updatedData, date: expense.date } 
             : expense
         ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       );
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
   
   const addEvent = useCallback(async (eventData: EventFormData): Promise<Event> => {
     setError(null);
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const newEvent = await apiClient.addEvent(eventData); // API handles ID
+        const newEvent = await apiClient.addEvent(apiBaseUrl, eventData); 
         setEvents(prev => [newEvent, ...prev]);
         return newEvent;
       } catch (err: any) {
@@ -240,14 +259,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setEvents(prev => [newEvent, ...prev]);
       return newEvent;
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
 
   const updateEvent = useCallback(async (eventId: string, updatedData: EventFormData) => {
     setError(null);
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const updatedEvent = await apiClient.updateEvent(eventId, updatedData);
+        const updatedEvent = await apiClient.updateEvent(apiBaseUrl, eventId, updatedData);
         setEvents(prevEvents =>
           prevEvents.map(event =>
             event.id === eventId ? { ...event, ...updatedEvent } : event
@@ -268,7 +287,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         )
       );
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
 
   const updateUser = useCallback(async (userId: string, name: string, avatarUrl?: string) => {
     setError(null);
@@ -276,7 +295,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const updatedUser = await apiClient.updateUser(userId, { name, avatarUrl: finalAvatarUrl });
+        const updatedUser = await apiClient.updateUser(apiBaseUrl, userId, { name, avatarUrl: finalAvatarUrl });
         setUsers(prevUsers => 
           prevUsers.map(user => 
             user.id === userId ? { ...user, ...updatedUser } : user
@@ -301,14 +320,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setCurrentUser(prev => prev ? { ...prev, name, avatarUrl: finalAvatarUrl } : null);
       }
     }
-  }, [persistenceMode, currentUser]);
+  }, [persistenceMode, apiBaseUrl, currentUser]);
 
   const setCurrentUserById = useCallback((userId: string | null) => {
     if (userId === null) {
       setCurrentUser(null);
       localStorage.removeItem('currentUserId');
     } else {
-      const userToSet = users.find(u => u.id === userId);
+      // In API mode, users array might be empty initially.
+      // In In-memory mode, users array is from DEFAULT_USERS_DATA.
+      const sourceUsers = persistenceMode === 'api' ? users : DEFAULT_USERS_DATA;
+      const userToSet = sourceUsers.find(u => u.id === userId);
       setCurrentUser(userToSet || null);
       if (userToSet) {
         localStorage.setItem('currentUserId', userId);
@@ -316,7 +338,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
          localStorage.removeItem('currentUserId');
       }
     }
-  }, [users]);
+  }, [users, persistenceMode]);
 
   const addCategory = useCallback(async (categoryName: string): Promise<boolean> => {
     setError(null);
@@ -327,12 +349,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const { category: newCategoryFromApi } = await apiClient.addCategory(trimmedName);
+        const { category: newCategoryFromApi } = await apiClient.addCategory(apiBaseUrl, trimmedName);
         setCategories(prev => [...prev, newCategoryFromApi].sort());
         return true;
       } catch (err: any) {
         setError(err.message || 'Failed to add category via API');
-        return false; // Indicate failure
+        return false; 
       } finally {
         setIsLoading(false);
       }
@@ -340,7 +362,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setCategories(prev => [...prev, trimmedName].sort());
       return true;
     }
-  }, [persistenceMode, categories]);
+  }, [persistenceMode, apiBaseUrl, categories]);
 
   const updateCategory = useCallback(async (oldCategoryName: string, newCategoryName: string): Promise<boolean> => {
     setError(null);
@@ -351,9 +373,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        const { category: updatedCategoryFromApi } = await apiClient.updateCategory(oldCategoryName, trimmedNewName);
+        const { category: updatedCategoryFromApi } = await apiClient.updateCategory(apiBaseUrl, oldCategoryName, trimmedNewName);
         setCategories(prev => prev.map(c => c.toLowerCase() === oldCategoryName.toLowerCase() ? updatedCategoryFromApi : c).sort());
-        // Note: Updating expenses' categories after API call might require re-fetching expenses or a specific API endpoint
         setExpenses(prevExpenses => prevExpenses.map(exp => 
           exp.category && exp.category.toLowerCase() === oldCategoryName.toLowerCase() 
             ? { ...exp, category: updatedCategoryFromApi } 
@@ -375,16 +396,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       ));
       return true;
     }
-  }, [persistenceMode, categories]);
+  }, [persistenceMode, apiBaseUrl, categories]);
 
   const removeCategory = useCallback(async (categoryName: string) => {
     setError(null);
     if (persistenceMode === 'api') {
       setIsLoading(true);
       try {
-        await apiClient.removeCategory(categoryName);
+        await apiClient.removeCategory(apiBaseUrl, categoryName);
         setCategories(prev => prev.filter(c => c.toLowerCase() !== categoryName.toLowerCase()));
-        // Note: Updating expenses' categories might require re-fetching or a specific API handling
         setExpenses(prevExpenses => prevExpenses.map(exp =>
           exp.category && exp.category.toLowerCase() === categoryName.toLowerCase()
             ? { ...exp, category: undefined }
@@ -404,10 +424,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           : exp
       ));
     }
-  }, [persistenceMode]);
+  }, [persistenceMode, apiBaseUrl]);
 
   const addSettlement = useCallback(async (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }): Promise<Expense> => {
-    // This function will use the existing addExpense, which is already mode-aware
     const settlementExpenseData = {
       description: `Settlement: ${details.payerName} to ${details.recipientName}`,
       amount: details.amount,
@@ -425,6 +444,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     categories,
     currentUser,
     persistenceMode,
+    apiBaseUrl,
     isLoading,
     error,
     addUser,
@@ -439,8 +459,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     removeCategory,
     addSettlement,
     togglePersistenceMode,
+    setApiBaseUrl,
     clearError,
-  }), [users, expenses, events, categories, currentUser, persistenceMode, isLoading, error, addUser, addExpense, updateExpense, addEvent, updateEvent, updateUser, setCurrentUserById, addCategory, updateCategory, removeCategory, addSettlement, togglePersistenceMode]);
+  }), [users, expenses, events, categories, currentUser, persistenceMode, apiBaseUrl, isLoading, error, addUser, addExpense, updateExpense, addEvent, updateEvent, updateUser, setCurrentUserById, addCategory, updateCategory, removeCategory, addSettlement, togglePersistenceMode, setApiBaseUrl, loadDataFromApi]); // Added loadDataFromApi to memo dependencies
 
   return (
     <AppDataContext.Provider value={contextValue}>

@@ -3,16 +3,13 @@
 /**
  * @fileOverview API client for interacting with the backend.
  * Contains functions to fetch and manipulate data via HTTP requests.
- * NOTE: This is a stub implementation. Replace with actual API calls.
  */
 import type { User, Expense, Event, EventFormData } from './types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api'; // Replace with your actual API base URL or use env var
-
 // Helper function for making API requests
-async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function request<T>(baseUrl: string, endpoint: string, options?: RequestInit): Promise<T> {
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+    const response = await fetch(`${baseUrl}${endpoint}`, options);
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ message: response.statusText }));
       throw new Error(errorData.message || `API request failed: ${response.status}`);
@@ -22,29 +19,29 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     }
     return response.json() as Promise<T>;
   } catch (error) {
-    console.error(`API request error to ${endpoint}:`, error);
+    console.error(`API request error to ${baseUrl}${endpoint}:`, error);
     throw error; // Re-throw to be caught by the caller
   }
 }
 
 // --- User Endpoints ---
-export const getUsers = async (): Promise<User[]> => {
-  console.log_API('getUsers called');
-  return request<User[]>('/users');
+export const getUsers = async (baseUrl: string): Promise<User[]> => {
+  console.log_API('getUsers called on', baseUrl);
+  return request<User[]>(baseUrl, '/users');
 };
 
-export const addUser = async (userData: { name: string; avatarUrl?: string }): Promise<User> => {
-  console.log_API('addUser called with:', userData);
-  return request<User>('/users', {
+export const addUser = async (baseUrl: string, userData: { name: string; avatarUrl?: string }): Promise<User> => {
+  console.log_API('addUser called on', baseUrl, 'with:', userData);
+  return request<User>(baseUrl, '/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userData),
   });
 };
 
-export const updateUser = async (userId: string, userData: { name: string; avatarUrl?: string }): Promise<User> => {
-  console.log_API('updateUser called for:', userId, 'with:', userData);
-  return request<User>(`/users/${userId}`, {
+export const updateUser = async (baseUrl: string, userId: string, userData: { name: string; avatarUrl?: string }): Promise<User> => {
+  console.log_API('updateUser called on', baseUrl, 'for:', userId, 'with:', userData);
+  return request<User>(baseUrl, `/users/${userId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(userData),
@@ -52,23 +49,23 @@ export const updateUser = async (userId: string, userData: { name: string; avata
 };
 
 // --- Expense Endpoints ---
-export const getExpenses = async (): Promise<Expense[]> => {
-  console.log_API('getExpenses called');
-  return request<Expense[]>('/expenses');
+export const getExpenses = async (baseUrl: string): Promise<Expense[]> => {
+  console.log_API('getExpenses called on', baseUrl);
+  return request<Expense[]>(baseUrl, '/expenses');
 };
 
-export const addExpense = async (expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
-  console.log_API('addExpense called with:', expenseData);
-  return request<Expense>('/expenses', {
+export const addExpense = async (baseUrl: string, expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
+  console.log_API('addExpense called on', baseUrl, 'with:', expenseData);
+  return request<Expense>(baseUrl, '/expenses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(expenseData), // Backend should add id and date
   });
 };
 
-export const updateExpense = async (expenseId: string, expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
-  console.log_API('updateExpense called for:', expenseId, 'with:', expenseData);
-  return request<Expense>(`/expenses/${expenseId}`, {
+export const updateExpense = async (baseUrl: string, expenseId: string, expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
+  console.log_API('updateExpense called on', baseUrl, 'for:', expenseId, 'with:', expenseData);
+  return request<Expense>(baseUrl, `/expenses/${expenseId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(expenseData),
@@ -76,23 +73,23 @@ export const updateExpense = async (expenseId: string, expenseData: Omit<Expense
 };
 
 // --- Event Endpoints ---
-export const getEvents = async (): Promise<Event[]> => {
-  console.log_API('getEvents called');
-  return request<Event[]>('/events');
+export const getEvents = async (baseUrl: string): Promise<Event[]> => {
+  console.log_API('getEvents called on', baseUrl);
+  return request<Event[]>(baseUrl, '/events');
 };
 
-export const addEvent = async (eventData: EventFormData): Promise<Event> => {
-  console.log_API('addEvent called with:', eventData);
-  return request<Event>('/events', {
+export const addEvent = async (baseUrl: string, eventData: EventFormData): Promise<Event> => {
+  console.log_API('addEvent called on', baseUrl, 'with:', eventData);
+  return request<Event>(baseUrl, '/events', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(eventData), // Backend should add id
   });
 };
 
-export const updateEvent = async (eventId: string, eventData: EventFormData): Promise<Event> => {
-  console.log_API('updateEvent called for:', eventId, 'with:', eventData);
-  return request<Event>(`/events/${eventId}`, {
+export const updateEvent = async (baseUrl: string, eventId: string, eventData: EventFormData): Promise<Event> => {
+  console.log_API('updateEvent called on', baseUrl, 'for:', eventId, 'with:', eventData);
+  return request<Event>(baseUrl, `/events/${eventId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(eventData),
@@ -100,41 +97,39 @@ export const updateEvent = async (eventId: string, eventData: EventFormData): Pr
 };
 
 // --- Category Endpoints ---
-export const getCategories = async (): Promise<string[]> => {
-  console.log_API('getCategories called');
+export const getCategories = async (baseUrl: string): Promise<string[]> => {
+  console.log_API('getCategories called on', baseUrl);
   // Assuming API returns { categories: string[] }
-  const response = await request<{ categories: string[] }>('/categories');
+  const response = await request<{ categories: string[] }>(baseUrl, '/categories');
   return response.categories;
 };
 
-export const addCategory = async (categoryName: string): Promise<{ category: string }> => {
-  console.log_API('addCategory called with:', categoryName);
-  return request<{ category: string }>('/categories', {
+export const addCategory = async (baseUrl: string, categoryName: string): Promise<{ category: string }> => {
+  console.log_API('addCategory called on', baseUrl, 'with:', categoryName);
+  return request<{ category: string }>(baseUrl, '/categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: categoryName }),
   });
 };
 
-export const updateCategory = async (oldCategoryName: string, newCategoryName: string): Promise<{ category: string }> => {
-  console.log_API('updateCategory called for old:', oldCategoryName, 'new:', newCategoryName);
-  // This endpoint might need specific design, e.g., how to identify the category to update
-  return request<{ category: string }>(`/categories/${encodeURIComponent(oldCategoryName)}`, {
+export const updateCategory = async (baseUrl: string, oldCategoryName: string, newCategoryName: string): Promise<{ category: string }> => {
+  console.log_API('updateCategory called on', baseUrl, 'for old:', oldCategoryName, 'new:', newCategoryName);
+  return request<{ category: string }>(baseUrl, `/categories/${encodeURIComponent(oldCategoryName)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: newCategoryName }),
   });
 };
 
-export const removeCategory = async (categoryName: string): Promise<void> => {
-  console.log_API('removeCategory called for:', categoryName);
-  return request<void>(`/categories/${encodeURIComponent(categoryName)}`, {
+export const removeCategory = async (baseUrl: string, categoryName: string): Promise<void> => {
+  console.log_API('removeCategory called on', baseUrl, 'for:', categoryName);
+  return request<void>(baseUrl, `/categories/${encodeURIComponent(categoryName)}`, {
     method: 'DELETE',
   });
 };
 
 // Helper for logging API calls during development
-// Using console.log_API to avoid lint errors if console.log is restricted
 function console_log_API(...args: any[]) {
   if (process.env.NODE_ENV === 'development') {
     console.log('[API Client]', ...args);

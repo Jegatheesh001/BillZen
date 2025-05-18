@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AddUserForm } from '@/components/settings/AddUserForm';
 import { ManageCategories } from '@/components/settings/ManageCategories';
 import { useAppData, type PersistenceMode } from '@/context/AppDataContext';
@@ -9,24 +9,47 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, WifiOff } from 'lucide-react';
+import { Loader2, WifiOff, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 
 export default function SettingsPage() {
   const { 
     users, 
     persistenceMode, 
     togglePersistenceMode, 
+    apiBaseUrl,
+    setApiBaseUrl: setContextApiBaseUrl,
     isLoading: isAppLoading, 
     error: appError,
     clearError
   } = useAppData();
+  const { toast } = useToast();
+  const [localApiBaseUrl, setLocalApiBaseUrl] = useState(apiBaseUrl);
+
+  useEffect(() => {
+    setLocalApiBaseUrl(apiBaseUrl);
+  }, [apiBaseUrl]);
 
   const handlePersistenceChange = (checked: boolean) => {
     const newMode: PersistenceMode = checked ? 'api' : 'inMemory';
     togglePersistenceMode(newMode);
+  };
+
+  const handleSaveApiUrl = () => {
+    if (!localApiBaseUrl.trim()) {
+      toast({
+        title: "Invalid URL",
+        description: "API Base URL cannot be empty.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setContextApiBaseUrl(localApiBaseUrl.trim());
+    // Toast for success is handled within AppDataContext after potential data reload
   };
 
   return (
@@ -49,24 +72,50 @@ export default function SettingsPage() {
 
       <Card className="shadow-lg rounded-xl">
         <CardHeader>
-          <CardTitle>Persistence Mode</CardTitle>
-          <CardDescription>Switch between in-memory (local) and API (backend) data storage.</CardDescription>
+          <CardTitle>Persistence Configuration</CardTitle>
+          <CardDescription>Control how and where your application data is stored.</CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="persistence-mode"
-              checked={persistenceMode === 'api'}
-              onCheckedChange={handlePersistenceChange}
-              disabled={isAppLoading}
-            />
-            <Label htmlFor="persistence-mode" className="flex-grow">
-              {persistenceMode === 'api' ? 'API Mode (Backend)' : 'In-Memory Mode (Local)'}
-            </Label>
-            {isAppLoading && persistenceMode === 'api' && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+        <CardContent className="space-y-6">
+          <div>
+            <Label htmlFor="persistence-mode-switch" className="text-base font-medium">Data Storage Mode</Label>
+            <div className="flex items-center space-x-2 mt-2">
+              <Switch
+                id="persistence-mode-switch"
+                checked={persistenceMode === 'api'}
+                onCheckedChange={handlePersistenceChange}
+                disabled={isAppLoading}
+              />
+              <Label htmlFor="persistence-mode-switch" className="flex-grow text-sm">
+                {persistenceMode === 'api' ? 'API Mode (Backend)' : 'In-Memory Mode (Local)'}
+              </Label>
+              {isAppLoading && persistenceMode === 'api' && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+            </div>
+            {isAppLoading && persistenceMode === 'api' && (
+              <p className="text-xs text-muted-foreground mt-1">Switching mode, please wait...</p>
+            )}
           </div>
-           {isAppLoading && (
-            <p className="text-sm text-muted-foreground mt-2">Switching mode, please wait...</p>
+          
+          {persistenceMode === 'api' && (
+            <div className="space-y-2 pt-4 border-t">
+              <Label htmlFor="api-base-url" className="text-base font-medium">API Base URL</Label>
+              <p className="text-xs text-muted-foreground">
+                Set the root URL for the backend API. Changes will attempt to reload data from the new URL.
+              </p>
+              <div className="flex items-center space-x-2">
+                <Input
+                  id="api-base-url"
+                  value={localApiBaseUrl}
+                  onChange={(e) => setLocalApiBaseUrl(e.target.value)}
+                  placeholder="e.g., https://your-api.com/api"
+                  disabled={isAppLoading}
+                  className="flex-grow"
+                />
+                <Button onClick={handleSaveApiUrl} disabled={isAppLoading || localApiBaseUrl === apiBaseUrl} size="sm">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save URL
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
