@@ -16,10 +16,10 @@ import type { Expense } from '@/lib/types';
 export default function ExpensesPage() {
   const [isExpenseSheetOpen, setIsExpenseSheetOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const { expenses, users, events } = useAppData();
+  const { expenses, users, events, currentUser } = useAppData(); // Get currentUser
   const [searchTerm, setSearchTerm] = useState('');
 
-  const debts = useMemo(() => calculateDebts(expenses, users), [expenses, users]);
+  const debts = useMemo(() => calculateDebts(expenses, users, currentUser?.id), [expenses, users, currentUser]);
 
   const filteredExpenses = useMemo(() => {
     if (!searchTerm) return expenses;
@@ -66,7 +66,7 @@ export default function ExpensesPage() {
         />
       </div>
       
-      <DebtSummary debts={debts} />
+      <DebtSummary debts={debts} currentUserId={currentUser?.id} /> {/* Pass currentUserId */}
 
       <div>
         <h3 className="text-xl font-semibold mb-3">Recent Expenses</h3>
