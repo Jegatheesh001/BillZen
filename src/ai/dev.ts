@@ -1,4 +1,6 @@
+
 import { config } from 'dotenv';
 config();
 
-import '@/ai/flows/categorize-expense.ts';
+// The categorize-expense.ts flow has been removed as it's no longer used.
+// import '@/ai/flows/categorize-expense.ts';

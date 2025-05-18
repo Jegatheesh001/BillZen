@@ -35,9 +35,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { useAppData } from '@/context/AppDataContext';
-import { categorizeExpense } from '@/ai/flows/categorize-expense';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
 import type { Expense } from '@/lib/types';
 
 const expenseFormSchema = z.object({
@@ -61,12 +59,21 @@ const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_dummy_empty_custom_category_";
 const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
+const HARDCODED_CATEGORIES: string[] = [
+  "Food",
+  "Transport",
+  "Shopping",
+  "Utilities",
+  "Entertainment",
+  "Groceries",
+  "Travel",
+  "Health",
+  "Other",
+];
 
 export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
   const { users, events, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense } = useAppData();
   const { toast } = useToast();
-  const [suggestedCategories, setSuggestedCategories] = useState<string[]>([]);
-  const [isCategorizing, setIsCategorizing] = useState(false);
   const [customCategory, setCustomCategory] = useState('');
 
   const form = useForm<ExpenseFormValues>({
@@ -76,43 +83,10 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       amount: 0,
       paidById: users[0]?.id || '',
       participantIds: users.map(u => u.id),
-      eventId: '', 
-      category: '', 
+      eventId: '',
+      category: '',
     },
   });
-
-  const watchedDescription = form.watch('description');
-
-  const handleCategorize = useCallback(async (description: string) => {
-    if (!description || description.length < 3) {
-      setSuggestedCategories([]);
-      return;
-    }
-    setIsCategorizing(true);
-    try {
-      const result = await categorizeExpense({ description });
-      setSuggestedCategories(result.categorySuggestions?.filter(cat => cat && cat.trim() !== '') || []);
-    } catch (error) {
-      console.error("AI categorization failed:", error);
-      setSuggestedCategories([]);
-      toast({
-        title: "Categorization Error",
-        description: "Could not fetch category suggestions.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsCategorizing(false);
-    }
-  }, [toast]);
-
-  useEffect(() => {
-    const debounceTimer = setTimeout(() => {
-      if (watchedDescription && open && !form.formState.isDirty && !expenseToEdit) { // Only auto-categorize for new, un-edited descriptions
-        handleCategorize(watchedDescription);
-      }
-    }, 1000); 
-    return () => clearTimeout(debounceTimer);
-  }, [watchedDescription, handleCategorize, open, form.formState.isDirty, expenseToEdit]);
 
   useEffect(() => {
     if (open && expenseToEdit) {
@@ -124,19 +98,10 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         eventId: expenseToEdit.eventId || '',
         category: expenseToEdit.category || '',
       });
-      if (expenseToEdit.category) {
-         // Fetch categories if description changes, or if it's an existing category
-        handleCategorize(expenseToEdit.description).then((cats) => {
-            const currentCats = cats || [];
-            if (expenseToEdit.category && !currentCats.includes(expenseToEdit.category!)){
-                 setCustomCategory(expenseToEdit.category!);
-            } else {
-                 setCustomCategory('');
-            }
-        });
+      if (expenseToEdit.category && !HARDCODED_CATEGORIES.includes(expenseToEdit.category)) {
+        setCustomCategory(expenseToEdit.category);
       } else {
         setCustomCategory('');
-        handleCategorize(expenseToEdit.description); // Also categorize if no initial category
       }
     } else if (open && !expenseToEdit) { // Reset to defaults if opening for ADD
       form.reset({
@@ -148,9 +113,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         category: '',
       });
       setCustomCategory('');
-      setSuggestedCategories([]);
     }
-  }, [open, expenseToEdit, form, users, handleCategorize]);
+  }, [open, expenseToEdit, form, users]);
 
 
   function onSubmit(data: ExpenseFormValues) {
@@ -174,18 +138,16 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
     }
     
-    // Reset form to pristine state for a new entry
     form.reset({
         description: '',
         amount: 0,
         paidById: users[0]?.id || '',
         participantIds: users.map(u => u.id),
-        eventId: '', 
-        category: '', 
+        eventId: '',
+        category: '',
       });
-    setSuggestedCategories([]);
     setCustomCategory('');
-    onOpenChange(false); // This also triggers parent to set expenseToEdit to null
+    onOpenChange(false); 
   }
   
   const sheetTitle = expenseToEdit ? "Edit Expense" : "Add New Expense";
@@ -324,7 +286,6 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Category</FormLabel>
-                  {isCategorizing && <Loader2 className="h-4 w-4 animate-spin inline-block ml-2" />}
                   <Select onValueChange={field.onChange} value={field.value || NO_CATEGORY_VALUE}>
                     <FormControl>
                       <SelectTrigger>
@@ -332,13 +293,13 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {suggestedCategories.map(cat => (
+                      {HARDCODED_CATEGORIES.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
-                      {suggestedCategories.length > 0 && (customCategory || suggestedCategories.filter(sc => sc.trim()).length > 0) && <hr className="my-1"/>}
+                      {(customCategory || HARDCODED_CATEGORIES.length > 0) && <hr className="my-1"/>}
                       <SelectItem 
-                        value={customCategory || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
-                        disabled={!customCategory.trim()} // Disable if customCategory is empty or just whitespace
+                        value={customCategory.trim() || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE} 
+                        disabled={!customCategory.trim()} 
                       >
                         {customCategory.trim() || "Enter custom below"}
                       </SelectItem>
@@ -351,7 +312,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                     onChange={(e) => {
                       const typedValue = e.target.value;
                       setCustomCategory(typedValue);
-                      field.onChange(typedValue.trim() || ''); 
+                      field.onChange(typedValue.trim() || DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE); 
                     }}
                     className="mt-2"
                   />
