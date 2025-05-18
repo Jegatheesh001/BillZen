@@ -104,8 +104,14 @@ export function ManageCategories() {
               className="w-full"
             />
           </div>
-          <Button onClick={handleAddCategory} size="sm">
-            <PlusCircle className="mr-2 h-4 w-4" /> Add Category
+          <Button 
+            onClick={handleAddCategory} 
+            size="icon" 
+            variant="outline" 
+            aria-label="Add new category"
+            title="Add new category"
+          >
+            <PlusCircle className="h-5 w-5" />
           </Button>
         </div>
 
