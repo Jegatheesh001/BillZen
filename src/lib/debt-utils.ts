@@ -9,10 +9,8 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
 
   if (expenses.length > 0) {
     expenses.forEach(expense => {
-      // User who paid gets credited for the full amount they paid
       userOverallBalances[expense.paidById] = (userOverallBalances[expense.paidById] || 0) + expense.amount;
       
-      // Each participant is debited their share
       const share = expense.amount / expense.participantIds.length;
       expense.participantIds.forEach(participantId => {
         userOverallBalances[participantId] = (userOverallBalances[participantId] || 0) - share;
@@ -20,7 +18,6 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
     });
   }
 
-  // If no current user is specified, or no expenses, return overall balances for everyone.
   if (!currentUserId || !expenses.length) {
     return users.map(user => ({
       userId: user.id,
@@ -30,10 +27,8 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
     })).sort((a, b) => b.balance - a.balance);
   }
 
-  // If a current user IS specified, calculate debts relative to them.
   const currentUser = users.find(u => u.id === currentUserId);
-  if (!currentUser) { // Should not happen if currentUserId is valid but users list might be out of sync
-    // Fallback to overall balances if currentUser not found for some reason
+  if (!currentUser) {
      return users.map(user => ({
       userId: user.id,
       userName: user.name,
@@ -42,10 +37,7 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
     })).sort((a, b) => b.balance - a.balance);
   }
 
-
   const debtsResult: Debt[] = [];
-
-  // 1. Add the current user's overall balance (their net standing in the group)
   debtsResult.push({
     userId: currentUser.id,
     userName: currentUser.name,
@@ -53,47 +45,52 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
     balance: parseFloat((userOverallBalances[currentUser.id] || 0).toFixed(2)),
   });
 
-  // 2. For each OTHER user, calculate what they owe to the current user, or what the current user owes them.
   users.forEach(otherUser => {
-    if (otherUser.id === currentUserId) return; // Skip the current user, already added.
+    if (otherUser.id === currentUserId) return;
 
     let netAmountOtherUserOwesCurrentUser = 0;
 
     expenses.forEach(expense => {
       const isCurrentUserParticipant = expense.participantIds.includes(currentUser.id);
       const isOtherUserParticipant = expense.participantIds.includes(otherUser.id);
+      const share = expense.amount / expense.participantIds.length;
 
-      // Only consider expenses where both currentUser and otherUser are participants
-      if (isCurrentUserParticipant && isOtherUserParticipant) {
-        const share = expense.amount / expense.participantIds.length;
-
-        if (expense.paidById === currentUser.id) {
-          // CurrentUser paid, OtherUser was a participant. So OtherUser owes CurrentUser their share.
-          netAmountOtherUserOwesCurrentUser += share;
-        } else if (expense.paidById === otherUser.id) {
-          // OtherUser paid, CurrentUser was a participant. So CurrentUser owes OtherUser their share.
-          netAmountOtherUserOwesCurrentUser -= share;
+      if (expense.category === "Settlement") {
+        // Handle settlements between currentUser and otherUser specifically
+        if (expense.paidById === otherUser.id && isCurrentUserParticipant) {
+          // OtherUser paid currentUser (settlement by otherUser)
+          netAmountOtherUserOwesCurrentUser += expense.amount;
+        } else if (expense.paidById === currentUser.id && isOtherUserParticipant) {
+          // CurrentUser paid otherUser (settlement by currentUser)
+          netAmountOtherUserOwesCurrentUser -= expense.amount;
         }
-        // If a third party paid for both, their direct debt to each other is not affected by this expense.
+      } else {
+        // Handle regular expenses involving both
+        if (isCurrentUserParticipant && isOtherUserParticipant) {
+          if (expense.paidById === currentUser.id) {
+            netAmountOtherUserOwesCurrentUser += share;
+          } else if (expense.paidById === otherUser.id) {
+            netAmountOtherUserOwesCurrentUser -= share;
+          }
+        }
       }
     });
-
+    
     // Only add if there's a non-trivial balance to display
-    if (Math.abs(netAmountOtherUserOwesCurrentUser) > 0.005) { // Using a small epsilon for float comparison
+    // Using a small epsilon for float comparison, e.g. 0.005 for half a cent
+    if (Math.abs(netAmountOtherUserOwesCurrentUser) > 0.005) { 
       debtsResult.push({
         userId: otherUser.id,
         userName: otherUser.name,
         avatarUrl: otherUser.avatarUrl,
-        // Positive: otherUser owes currentUser. Negative: currentUser owes otherUser.
         balance: parseFloat(netAmountOtherUserOwesCurrentUser.toFixed(2)),
       });
     }
   });
 
   return debtsResult.sort((a,b) => {
-      if (a.userId === currentUserId) return -1; // Current user always first
+      if (a.userId === currentUserId) return -1;
       if (b.userId === currentUserId) return 1;
-      // For other users, sort by who owes the current user the most, then by who the current user owes the most
       return b.balance - a.balance; 
   });
 }

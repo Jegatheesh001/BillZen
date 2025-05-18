@@ -1,6 +1,7 @@
 
 "use client";
 
+import React, { useState } from 'react'; // Added useState
 import type { Debt } from '@/lib/types';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,6 +20,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input"; // Added Input
+import { Label } from "@/components/ui/label"; // Added Label
 
 interface DebtSummaryProps {
   debts: Debt[];
@@ -28,6 +31,10 @@ interface DebtSummaryProps {
 export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
   const { addSettlement, users: allUsers, currentUser } = useAppData();
   const { toast } = useToast();
+  const [settlementAmountInput, setSettlementAmountInput] = useState<string>('');
+  const [settlementError, setSettlementError] = useState<string>('');
+  const [currentDebtEntryForDialog, setCurrentDebtEntryForDialog] = useState<Debt | null>(null);
+
 
   const noDebtsToShow = debts.length === 0 ||
                         (currentUserId && debts.length === 1 && debts[0].userId === currentUserId && debts[0].balance === 0);
@@ -47,34 +54,53 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
       </Card>
     );
   }
+  
+  const openSettleDialog = (debtEntry: Debt) => {
+    setCurrentDebtEntryForDialog(debtEntry);
+    setSettlementAmountInput(Math.abs(debtEntry.balance).toFixed(2));
+    setSettlementError('');
+  };
 
-  const handleSettlement = (debtEntry: Debt) => {
-    if (!currentUser || !currentUserId || debtEntry.userId === currentUserId) return;
+  const handleConfirmSettlement = () => {
+    if (!currentUser || !currentUserId || !currentDebtEntryForDialog || currentDebtEntryForDialog.userId === currentUserId) return;
 
-    const otherUser = allUsers.find(u => u.id === debtEntry.userId);
+    const otherUser = allUsers.find(u => u.id === currentDebtEntryForDialog.userId);
     if (!otherUser) return;
 
-    let payerId: string, recipientId: string, amount: number, payerName: string, recipientName: string;
+    const amountToSettle = parseFloat(settlementAmountInput);
+    const maxAmount = parseFloat(Math.abs(currentDebtEntryForDialog.balance).toFixed(2));
 
-    if (debtEntry.balance > 0) { // Other user owes current user
+    if (isNaN(amountToSettle) || amountToSettle <= 0) {
+      setSettlementError("Please enter a valid positive amount.");
+      return;
+    }
+    if (amountToSettle > maxAmount) {
+      setSettlementError(`Amount cannot exceed the debt of $${maxAmount.toFixed(2)}.`);
+      return;
+    }
+    setSettlementError('');
+
+    let payerId: string, recipientId: string, payerName: string, recipientName: string;
+
+    if (currentDebtEntryForDialog.balance > 0) { // Other user owes current user
       payerId = otherUser.id;
       recipientId = currentUser.id;
       payerName = otherUser.name;
       recipientName = currentUser.name;
-      amount = debtEntry.balance;
     } else { // Current user owes other user
       payerId = currentUser.id;
       recipientId = otherUser.id;
       payerName = currentUser.name;
       recipientName = otherUser.name;
-      amount = Math.abs(debtEntry.balance);
     }
 
-    addSettlement({ payerId, recipientId, amount, payerName, recipientName });
+    addSettlement({ payerId, recipientId, amount: amountToSettle, payerName, recipientName });
     toast({
       title: "Settlement Recorded",
-      description: `Settlement of $${amount.toFixed(2)} between ${payerName} and ${recipientName} recorded.`,
+      description: `Settlement of $${amountToSettle.toFixed(2)} between ${payerName} and ${recipientName} recorded.`,
     });
+    // The AlertDialog will close itself via AlertDialogAction, no need to manually close here
+    // Resetting state will happen when dialog is re-opened or onOpenChange if we control it that way
   };
   
   return (
@@ -132,9 +158,9 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                     </span>
                   </div>
                   {showSettleButton && (
-                    <AlertDialog>
+                    <AlertDialog onOpenChange={(open) => { if (!open) setCurrentDebtEntryForDialog(null); }}>
                       <AlertDialogTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-7 px-2 py-1 text-xs">
+                        <Button variant="outline" size="sm" className="h-7 px-2 py-1 text-xs" onClick={() => openSettleDialog(debt)}>
                           <Landmark className="mr-1 h-3 w-3" /> Settle
                         </Button>
                       </AlertDialogTrigger>
@@ -142,16 +168,36 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Confirm Settlement</AlertDialogTitle>
                           <AlertDialogDescription>
-                            {debt.balance > 0 
-                              ? `Record that ${debt.userName} has paid you $${amountDisplay}?`
-                              : `Record that you have paid ${debt.userName} $${amountDisplay}?`
+                            {currentDebtEntryForDialog?.balance && currentDebtEntryForDialog.balance > 0 
+                              ? `Record that ${currentDebtEntryForDialog.userName} has paid you.`
+                              : `Record that you have paid ${currentDebtEntryForDialog?.userName}.`
                             }
                             <br/>This will create a new "Settlement" expense.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
+                        <div className="space-y-2 my-4">
+                          <Label htmlFor="settlementAmount">Settlement Amount ($)</Label>
+                          <Input
+                            id="settlementAmount"
+                            type="number"
+                            step="0.01"
+                            value={settlementAmountInput}
+                            onChange={(e) => {
+                                setSettlementAmountInput(e.target.value);
+                                // Basic check to clear error if user starts correcting
+                                const val = parseFloat(e.target.value);
+                                const maxVal = currentDebtEntryForDialog ? parseFloat(Math.abs(currentDebtEntryForDialog.balance).toFixed(2)) : 0;
+                                if (!isNaN(val) && val > 0 && val <= maxVal) {
+                                    setSettlementError('');
+                                }
+                            }}
+                            placeholder={`Max $${currentDebtEntryForDialog ? Math.abs(currentDebtEntryForDialog.balance).toFixed(2) : '0.00'}`}
+                          />
+                          {settlementError && <p className="text-xs text-destructive">{settlementError}</p>}
+                        </div>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => handleSettlement(debt)}>
+                          <AlertDialogCancel onClick={() => setSettlementError('')}>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleConfirmSettlement}> 
                             Confirm Settlement
                           </AlertDialogAction>
                         </AlertDialogFooter>
