@@ -59,19 +59,23 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
         // Handle settlements between currentUser and otherUser specifically
         if (expense.paidById === otherUser.id && isCurrentUserParticipant) {
           // OtherUser paid currentUser (settlement by otherUser)
-          netAmountOtherUserOwesCurrentUser += expense.amount;
+          // This means otherUser's debt to currentUser should DECREASE.
+          netAmountOtherUserOwesCurrentUser -= expense.amount;
         } else if (expense.paidById === currentUser.id && isOtherUserParticipant) {
           // CurrentUser paid otherUser (settlement by currentUser)
-          netAmountOtherUserOwesCurrentUser -= expense.amount;
+          // This means currentUser's debt to otherUser should DECREASE,
+          // which means otherUser's "debt" to currentUser (netAmountOtherUserOwesCurrentUser) effectively INCREASES.
+          netAmountOtherUserOwesCurrentUser += expense.amount;
         }
       } else {
         // Handle regular expenses involving both
         if (isCurrentUserParticipant && isOtherUserParticipant) {
-          if (expense.paidById === currentUser.id) {
+          if (expense.paidById === currentUser.id) { // currentUser paid for otherUser's share
             netAmountOtherUserOwesCurrentUser += share;
-          } else if (expense.paidById === otherUser.id) {
+          } else if (expense.paidById === otherUser.id) { // otherUser paid for currentUser's share
             netAmountOtherUserOwesCurrentUser -= share;
           }
+          // If someone else paid for both, their individual shares cancel out in this direct calculation.
         }
       }
     });
@@ -94,3 +98,4 @@ export function calculateDebts(expenses: Expense[], users: User[], currentUserId
       return b.balance - a.balance; 
   });
 }
+
