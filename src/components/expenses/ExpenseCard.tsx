@@ -79,7 +79,7 @@ export function ExpenseCard({ expense, users, eventName, onEdit }: ExpenseCardPr
         )}
       </CardContent>
       <CardFooter className="bg-card/50 p-2 text-xs text-muted-foreground">
-        <p>Date: {format(new Date(expense.date), "MMM d, yyyy")}</p>
+        <p>Date: {format(new Date(expense.date), "MMM d, yyyy, h:mm a")}</p>
       </CardFooter>
     </Card>
   );
