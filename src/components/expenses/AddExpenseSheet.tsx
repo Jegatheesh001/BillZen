@@ -59,7 +59,7 @@ const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
 export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
-  const { users, events, categories, addCategory, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense } = useAppData();
+  const { users, events, categories, addCategory, addExpense: addAppDataExpense, updateExpense: updateAppDataExpense, currentUser } = useAppData();
   const { toast } = useToast();
   const [customCategoryInput, setCustomCategoryInput] = useState('');
 
@@ -68,7 +68,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     defaultValues: {
       description: '',
       amount: 0,
-      paidById: users[0]?.id || '',
+      paidById: currentUser?.id || users[0]?.id || '',
       participantIds: users.map(u => u.id),
       eventId: '',
       category: '',
@@ -93,14 +93,14 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       form.reset({
         description: '',
         amount: 0,
-        paidById: users[0]?.id || '',
+        paidById: currentUser?.id || users[0]?.id || '',
         participantIds: users.map(u => u.id),
         eventId: NO_EVENT_VALUE,
         category: NO_CATEGORY_VALUE,
       });
       setCustomCategoryInput('');
     }
-  }, [open, expenseToEdit, form, users]);
+  }, [open, expenseToEdit, form, users, currentUser]);
 
 
   function onSubmit(data: ExpenseFormValues) {
@@ -133,7 +133,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     form.reset({
         description: '',
         amount: 0,
-        paidById: users[0]?.id || '',
+        paidById: currentUser?.id || users[0]?.id || '',
         participantIds: users.map(u => u.id),
         eventId: NO_EVENT_VALUE,
         category: NO_CATEGORY_VALUE,
