@@ -65,12 +65,14 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-semibold">Expenses</h2>
+      <div className="flex justify-end items-center"> {/* Removed justify-between, title removed */}
+        {/* Title "Expenses" h2 removed from here */}
         <Button onClick={handleAddExpenseClick} size="sm" className="rounded-full">
           <PlusCircle className="mr-2 h-5 w-5" /> Add Expense
         </Button>
       </div>
+      
+      <DebtSummary debts={debts} currentUserId={currentUser?.id} />
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
@@ -81,8 +83,6 @@ export default function ExpensesPage() {
           onChange={(e) => setSearchTerm(e.target.value)}
         />
       </div>
-      
-      <DebtSummary debts={debts} currentUserId={currentUser?.id} />
 
       <div>
         <h3 className="text-xl font-semibold mb-3">Recent Expenses</h3>
@@ -91,7 +91,7 @@ export default function ExpensesPage() {
             {noExpensesMessage} <br/>Click &quot;Add Expense&quot; to get started!
           </p>
         ) : (
-          <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height as needed */}
+          <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height as needed, may need tweaking after layout change */}
             <div className="space-y-4 pr-2">
             {filteredExpenses.map(expense => {
               const eventName = events.find(e => e.id === expense.eventId)?.name;
