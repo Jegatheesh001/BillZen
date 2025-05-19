@@ -6,8 +6,22 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Coins, Tag, Users, CalendarIcon, Pencil } from 'lucide-react';
+import { Coins, Tag, Users, CalendarIcon, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useAppData } from '@/context/AppDataContext';
+import { useToast } from '@/hooks/use-toast';
+import React, { useState } from 'react';
 
 interface ExpenseCardProps {
   expense: ExpenseType;
@@ -19,20 +33,69 @@ interface ExpenseCardProps {
 export function ExpenseCard({ expense, users, eventName, onEdit }: ExpenseCardProps) {
   const paidBy = users.find(u => u.id === expense.paidById);
   const participants = users.filter(u => expense.participantIds.includes(u.id));
+  const { currentUser, deleteExpense: contextDeleteExpense, isLoading: isAppLoading } = useAppData();
+  const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+
+  const canDelete = currentUser && expense.paidById === currentUser.id;
+
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await contextDeleteExpense(expense.id);
+      // Toast is handled by context now
+      setIsAlertOpen(false);
+    } catch (error: any) {
+      // Toast is handled by context now
+      console.error("Failed to delete expense from card:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <Card className="mb-4 shadow-lg rounded-xl overflow-hidden">
       <CardHeader className="bg-card/50 p-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold text-foreground">{expense.description}</CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Badge variant="secondary" className="text-sm font-bold">
               ${expense.amount.toFixed(2)}
             </Badge>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(expense)}>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(expense)} disabled={isAppLoading || isDeleting}>
               <Pencil className="h-4 w-4" />
               <span className="sr-only">Edit expense</span>
             </Button>
+            {canDelete && (
+              <AlertDialog open={isAlertOpen} onOpenChange={setIsAlertOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive/80" disabled={isAppLoading || isDeleting}>
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Delete expense</span>
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the expense: "{expense.description}".
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={handleDeleteConfirm} 
+                      disabled={isDeleting || isAppLoading}
+                      className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                    >
+                      {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
         {expense.category && (
