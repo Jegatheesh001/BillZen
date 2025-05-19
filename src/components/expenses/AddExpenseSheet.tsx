@@ -42,8 +42,8 @@ const expenseFormSchema = z.object({
   description: z.string().min(1, "Description is required."),
   amount: z.coerce.number().positive("Amount must be positive."),
   paidById: z.string().min(1, "Payer is required."),
-  participantIds: z.array(z.string()).min(1, "At least one participant is required."),
   eventId: z.string().optional(),
+  participantIds: z.array(z.string()).min(1, "At least one participant is required."),
   category: z.string().optional(),
 });
 
@@ -80,11 +80,13 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       description: '',
       amount: 0,
       paidById: currentUser?.id || users[0]?.id || '',
-      participantIds: users.map(u => u.id),
       eventId: NO_EVENT_VALUE,
+      participantIds: users.map(u => u.id),
       category: NO_CATEGORY_VALUE,
     },
   });
+
+  const selectedEventId = form.watch('eventId');
 
   useEffect(() => {
     if (open && expenseToEdit) {
@@ -92,8 +94,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         description: expenseToEdit.description,
         amount: expenseToEdit.amount,
         paidById: expenseToEdit.paidById,
-        participantIds: expenseToEdit.participantIds,
         eventId: expenseToEdit.eventId || NO_EVENT_VALUE,
+        participantIds: expenseToEdit.participantIds,
         category: expenseToEdit.category || NO_CATEGORY_VALUE,
       });
       setCustomCategoryInput(''); 
@@ -102,13 +104,26 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         description: '',
         amount: 0,
         paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
-        participantIds: users.map(u => u.id),
         eventId: NO_EVENT_VALUE,
+        participantIds: users.map(u => u.id),
         category: NO_CATEGORY_VALUE,
       });
       setCustomCategoryInput('');
     }
   }, [open, expenseToEdit, form, users, currentUser]);
+
+  useEffect(() => {
+    if (selectedEventId && selectedEventId !== NO_EVENT_VALUE) {
+      const event = events.find(e => e.id === selectedEventId);
+      if (event) {
+        form.setValue('participantIds', event.memberIds, { shouldValidate: true });
+      }
+    } else if (selectedEventId === NO_EVENT_VALUE) {
+      // If "No Event" is selected, reset participants to all users
+      form.setValue('participantIds', users.map(u => u.id), { shouldValidate: true });
+    }
+    // Only run this effect when selectedEventId changes, to avoid infinite loops with participantIds
+  }, [selectedEventId, events, users, form]);
 
 
   async function onSubmit(data: ExpenseFormValues) {
@@ -144,8 +159,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
           description: '',
           amount: 0,
           paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
-          participantIds: users.map(u => u.id),
           eventId: NO_EVENT_VALUE,
+          participantIds: users.map(u => u.id),
           category: NO_CATEGORY_VALUE,
         });
       setCustomCategoryInput('');
@@ -184,7 +199,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         <div className="p-6">
         <SheetHeader>
           <SheetTitle>{sheetTitle}</SheetTitle>
-          <SheetDescription>{sheetDescription} Data stored in Firebase.</SheetDescription>
+          <SheetDescription>{sheetDescription} {expenseToEdit ? "Data stored in Firebase." : "Data will be stored in Firebase."}</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
@@ -236,6 +251,33 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                 </FormItem>
               )}
             />
+             <FormField
+              control={form.control}
+              name="eventId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Event (Optional)</FormLabel>
+                  <Select 
+                    onValueChange={field.onChange} 
+                    value={field.value || NO_EVENT_VALUE} 
+                    disabled={formDisabled || events.length === 0}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Assign to an event" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value={NO_EVENT_VALUE}>No Event</SelectItem>
+                      {events.map(event => (
+                        <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="participantIds"
@@ -277,29 +319,6 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
                       ))}
                     </div>
                   </ScrollArea>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-             <FormField
-              control={form.control}
-              name="eventId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Event (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} disabled={formDisabled || events.length === 0}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Assign to an event" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={NO_EVENT_VALUE}>No Event</SelectItem>
-                      {events.map(event => (
-                        <SelectItem key={event.id} value={event.id}>{event.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
@@ -374,3 +393,4 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     </Sheet>
   );
 }
+
