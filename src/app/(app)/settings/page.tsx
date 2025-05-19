@@ -65,7 +65,7 @@ export default function SettingsPage() {
               </ScrollArea>
             ) : (
               <p className="text-sm text-muted-foreground">
-                {isAppLoading ? 'Loading...' : 'No users yet. Add some to get started!'}
+                {isAppLoading ? 'Still loading users...' : 'No users yet. Add some to get started!'}
               </p>
             )}
           </div>
@@ -77,3 +77,6 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+
+    

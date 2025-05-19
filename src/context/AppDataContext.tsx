@@ -27,7 +27,7 @@ import {
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 
 
-const DEFAULT_USERS_DATA_SEED: Omit<User, 'id'>[] = [ // Seed data doesn't need ID
+const DEFAULT_USERS_DATA_SEED: Omit<User, 'id'>[] = [
   { name: 'Alice', avatarUrl: 'https://placehold.co/100x100.png?text=A' },
   { name: 'Bob', avatarUrl: 'https://placehold.co/100x100.png?text=B' },
   { name: 'Charlie', avatarUrl: 'https://placehold.co/100x100.png?text=C' },
@@ -43,8 +43,8 @@ interface AppDataContextState {
   expenses: Expense[];
   events: Event[];
   categories: string[];
-  currentUser: User | null; // This will be our app's user profile
-  firebaseUser: FirebaseUser | null; // This is the Firebase Auth user
+  currentUser: User | null;
+  firebaseUser: FirebaseUser | null;
   isLoading: boolean;
   error: string | null;
   addUser: (name: string, avatarUrl?: string, firebaseUid?: string) => Promise<User>;
@@ -71,36 +71,46 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const clearError = () => setError(null);
 
-  // Firebase Auth state listener
+  // Handles Firebase Auth state changes and initial user profile setup
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (user) {
-        // User is signed in, see if we have a profile for them
-        const userDocRef = doc(db, "users", user.uid);
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setIsLoading(true); // Indicate loading during auth state processing
+      setFirebaseUser(fbUser);
+      if (fbUser) {
+        const userDocRef = doc(db, "users", fbUser.uid);
         const userDocSnap = await getDoc(userDocRef);
         if (userDocSnap.exists()) {
           const appUser = { id: userDocSnap.id, ...userDocSnap.data() } as User;
           setCurrentUser(appUser);
           localStorage.setItem('currentUserId', appUser.id);
         } else {
-          // No profile yet, create one
-          // For now, if no profile, we might set currentUser to null or a temporary state
-          // Or automatically create a profile. This part will be refined with full auth UI.
-          // Let's try to add a user if their profile doesn't exist.
-           try {
-            const newAppUser = await addUser(user.displayName || "New User", user.photoURL || undefined, user.uid);
+          // No app profile yet for this Firebase user, create one
+          try {
+            const newUserPayload: Omit<User, 'id'> = {
+              name: fbUser.displayName || `User-${fbUser.uid.substring(0,5)}`,
+              avatarUrl: fbUser.photoURL || `https://placehold.co/100x100.png?text=${(fbUser.displayName || "U").charAt(0).toUpperCase()}`,
+            };
+            await setDoc(userDocRef, newUserPayload); // Use fbUser.uid as doc ID
+            const newAppUser: User = { id: fbUser.uid, ...newUserPayload };
             setCurrentUser(newAppUser);
             localStorage.setItem('currentUserId', newAppUser.id);
-          } catch (e) {
+            // New user added, might need to reflect this in the users list if fetchData hasn't run or won't pick it up
+            setUsers(prev => {
+                if (!prev.find(u => u.id === newAppUser.id)) {
+                    return [...prev, newAppUser];
+                }
+                return prev;
+            });
+          } catch (e: any) {
             console.error("Error creating user profile on auth change:", e);
-            setError("Failed to create user profile.");
+            setError("Failed to create user profile. " + e.message);
+            toast({ title: "Profile Creation Error", description: e.message, variant: "destructive" });
           }
         }
       } else {
@@ -108,34 +118,36 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setCurrentUser(null);
         localStorage.removeItem('currentUserId');
       }
-      // Initial data load will be triggered by firebaseUser/currentUser changes if needed
+      // setIsLoading(false) will be handled by the main data fetching effect
     });
     return () => unsubscribe();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // addUser will be wrapped in useCallback
+  }, [toast]); // Keep dependencies minimal and stable
 
+
+  // Main data fetching logic
   const fetchData = useCallback(async () => {
-    if (!db) return; // Firebase not initialized
+    if (!db) return;
     setIsLoading(true);
     setError(null);
+    let usersList: User[] = [];
+
     try {
       // Fetch Users
       const usersCol = collection(db, "users");
       const userSnapshot = await getDocs(usersCol);
-      const usersList = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
+      usersList = userSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as User));
       setUsers(usersList);
 
       // Fetch Expenses
-      // For now, fetch all expenses. In a real app, you'd filter by user involvement.
       const expensesCol = collection(db, "expenses");
       const expensesQuery = query(expensesCol, orderBy("date", "desc"));
       const expenseSnapshot = await getDocs(expensesQuery);
-      const expensesList = expenseSnapshot.docs.map(doc => {
-        const data = doc.data();
+      const expensesList = expenseSnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
         return { 
-          id: doc.id, 
+          id: docSnap.id, 
           ...data,
-          date: (data.date as Timestamp)?.toDate().toISOString() || new Date().toISOString() // Convert Firestore Timestamp
+          date: (data.date as Timestamp)?.toDate().toISOString() || new Date().toISOString()
         } as Expense;
       });
       setExpenses(expensesList);
@@ -143,62 +155,69 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       // Fetch Events
       const eventsCol = collection(db, "events");
       const eventSnapshot = await getDocs(eventsCol);
-      const eventsList = eventSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Event));
+      const eventsList = eventSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Event));
       setEvents(eventsList);
 
-      // Fetch Categories (from a single document for simplicity)
+      // Fetch Categories
       const categoriesDocRef = doc(db, "appConfig", "categories");
       const categoriesDocSnap = await getDoc(categoriesDocRef);
       if (categoriesDocSnap.exists()) {
         setCategories((categoriesDocSnap.data().list as string[]).sort() || []);
       } else {
-        // Seed categories if document doesn't exist
         await setDoc(categoriesDocRef, { list: INITIAL_CATEGORIES_DATA_SEED });
         setCategories(INITIAL_CATEGORIES_DATA_SEED);
       }
 
-      // Seed Users if collection is empty (simple seeding)
-      if (usersList.length === 0 && !firebaseUser) { // Only seed if no users and no logged-in user yet
+      // Seed Users if collection is empty AND no firebase user is active (to avoid conflicts)
+      if (usersList.length === 0 && !firebaseUser) {
           const batch = writeBatch(db);
+          const seededUsers: User[] = [];
           DEFAULT_USERS_DATA_SEED.forEach(userSeed => {
-            // In a real scenario with auth, user IDs would be Firebase UIDs
-            // For now, let Firestore generate IDs for these seed users.
             const userDocRef = doc(collection(db, "users")); 
             batch.set(userDocRef, userSeed);
+            seededUsers.push({id: userDocRef.id, ...userSeed});
           });
           await batch.commit();
-          // Re-fetch users after seeding
-          const seededUserSnapshot = await getDocs(usersCol);
-          const seededUsersList = seededUserSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as User));
-          setUsers(seededUsersList);
-          if (seededUsersList.length > 0 && !currentUser) {
-            setCurrentUser(seededUsersList[0]);
-            localStorage.setItem('currentUserId', seededUsersList[0].id);
-          }
-      } else if (usersList.length > 0 && !currentUser && !firebaseUser) {
-         // If users exist from Firebase but no currentUser is set (and no FirebaseUser to trigger selection)
-        const savedUserId = localStorage.getItem('currentUserId');
-        const userToSet = savedUserId ? usersList.find(u => u.id === savedUserId) : usersList[0];
-        setCurrentUser(userToSet || usersList[0] || null);
+          usersList = seededUsers; // Update usersList with seeded users
+          setUsers(usersList);
       }
-
-
+      return usersList; // Return the fetched/updated users list
     } catch (e: any) {
       console.error("Error fetching data from Firebase:", e);
       setError(e.message || "Failed to load data from Firebase.");
       toast({ title: "Error Loading Data", description: e.message, variant: "destructive" });
+      return usersList; // Return potentially partially fetched or empty list on error
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Crucial: ensure loading is set to false
     }
-  }, [toast, currentUser, firebaseUser]); // Dependencies for re-fetching logic
+  }, [toast, firebaseUser]); // Removed currentUser from dependencies
 
-
+  // Effect to load data and then set current user
   useEffect(() => {
-    fetchData();
-  }, [fetchData]); // fetchData is memoized
+    fetchData().then((fetchedUsers) => {
+      // This block runs after fetchData has completed (successfully or with error)
+      // and setIsLoading(false) has been called by fetchData's finally.
+      if (!currentUser && fetchedUsers.length > 0) {
+        const savedUserId = localStorage.getItem('currentUserId');
+        let userToSet = null;
+        if (savedUserId) {
+          userToSet = fetchedUsers.find(u => u.id === savedUserId);
+        }
+        if (!userToSet && fetchedUsers.length > 0) {
+          userToSet = fetchedUsers[0];
+        }
+        
+        if (userToSet) {
+          setCurrentUser(userToSet);
+          if(!savedUserId) localStorage.setItem('currentUserId', userToSet.id);
+        }
+      }
+    });
+  }, [firebaseUser, fetchData]); // Depends on firebaseUser (to trigger after auth state is known) and fetchData ref
+
 
   const addUser = useCallback(async (name: string, avatarUrl?: string, firebaseUid?: string): Promise<User> => {
-    setIsLoading(true);
+    setIsLoading(true); // Indicate loading for this specific operation
     try {
       const userRef = firebaseUid ? doc(db, "users", firebaseUid) : doc(collection(db, "users"));
       const newUserPayload: Omit<User, 'id'> = {
@@ -208,8 +227,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       await setDoc(userRef, newUserPayload);
       const newUser: User = { id: userRef.id, ...newUserPayload };
       
-      setUsers(prev => [...prev, newUser]);
-      if (users.length === 0 && !currentUser) { // if this is the very first user added by interaction
+      setUsers(prev => {
+        // Avoid duplicates if user was already added by auth listener
+        if (!prev.find(u => u.id === newUser.id)) {
+            return [...prev, newUser];
+        }
+        return prev;
+      });
+
+      // If this is the very first user manually added AND no one is logged in via Firebase to auto-select
+      if (users.length === 0 && !currentUser && !firebaseUser) {
           setCurrentUser(newUser);
           localStorage.setItem('currentUserId', newUser.id);
       }
@@ -221,7 +248,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       toast({ title: "Error Adding User", description: e.message, variant: "destructive" });
       throw e;
     }
-  }, [users, currentUser, toast]);
+  }, [toast, users, currentUser, firebaseUser]); // users, currentUser, firebaseUser are needed for the setCurrentUser logic
 
 
   const addExpense = useCallback(async (expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense> => {
@@ -229,16 +256,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       const newExpensePayload = {
         ...expenseData,
-        date: serverTimestamp(), // Use server timestamp
+        date: serverTimestamp(), 
       };
       const docRef = await addDoc(collection(db, "expenses"), newExpensePayload);
-      // For client-side state, we need an actual date.
-      // Firestore returns a Timestamp; we'll convert it or use client date for immediate UI.
-      // For simplicity, re-fetch or use a client-generated date for immediate UI update
       const newExpense: Expense = {
         ...expenseData,
         id: docRef.id,
-        date: new Date().toISOString(), // Use client date for immediate state
+        date: new Date().toISOString(), 
       };
       setExpenses(prev => [newExpense, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
       setIsLoading(false);
@@ -255,13 +279,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const expenseRef = doc(db, "expenses", expenseId);
-      // Firestore update doesn't change 'date' unless specified
       await updateDoc(expenseRef, updatedData);
       
       setExpenses(prevExpenses =>
         prevExpenses.map(expense =>
           expense.id === expenseId
-            ? { ...expense, ...updatedData, date: expense.date } // Keep original date unless updatedData has it
+            ? { ...expense, ...updatedData, date: expense.date } 
             : expense
         ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       );
@@ -336,8 +359,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [currentUser, toast]);
 
   const setCurrentUserById = useCallback((userId: string | null) => {
-    // This function now primarily relies on users list already fetched from Firebase.
-    // Actual Firebase Auth state change will set firebaseUser and trigger profile fetch.
     if (userId === null) {
       setCurrentUser(null);
       localStorage.removeItem('currentUserId');
@@ -358,14 +379,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const trimmedName = categoryName.trim();
       const categoriesDocRef = doc(db, "appConfig", "categories");
       const currentCategoriesSnap = await getDoc(categoriesDocRef);
-      const currentCategoriesList = currentCategoriesSnap.exists() ? (currentCategoriesSnap.data().list as string[]) : [];
+      const currentCategoriesList = currentCategoriesSnap.exists() ? (currentCategoriesSnap.data().list as string[]).map(c=>c.toLowerCase()) : [];
 
-      if (!trimmedName || currentCategoriesList.find(c => c.toLowerCase() === trimmedName.toLowerCase())) {
+      if (!trimmedName || currentCategoriesList.includes(trimmedName.toLowerCase())) {
         setIsLoading(false);
         return false; 
       }
       
-      await updateDoc(categoriesDocRef, { list: arrayUnion(trimmedName) });
+      await updateDoc(categoriesDocRef, { list: arrayUnion(trimmedName) }, { merge: true });
       setCategories(prev => [...prev, trimmedName].sort());
       setIsLoading(false);
       return true;
@@ -383,27 +404,30 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const trimmedNewName = newCategoryName.trim();
       const categoriesDocRef = doc(db, "appConfig", "categories");
       const currentCategoriesSnap = await getDoc(categoriesDocRef);
-      const currentCategoriesList = currentCategoriesSnap.exists() ? (currentCategoriesSnap.data().list as string[]) : [];
+      const currentCategoriesList = currentCategoriesSnap.exists() ? (currentCategoriesSnap.data().list as string[]).map(c=>c.toLowerCase()) : [];
 
-      if (!trimmedNewName || currentCategoriesList.find(c => c.toLowerCase() === trimmedNewName.toLowerCase() && c.toLowerCase() !== oldCategoryName.toLowerCase())) {
+      if (!trimmedNewName || (currentCategoriesList.includes(trimmedNewName.toLowerCase()) && trimmedNewName.toLowerCase() !== oldCategoryName.toLowerCase())) {
         setIsLoading(false);
         return false; 
       }
-      // To update an item in an array in Firestore: remove old, add new
-      await updateDoc(categoriesDocRef, { list: arrayRemove(oldCategoryName) });
-      await updateDoc(categoriesDocRef, { list: arrayUnion(trimmedNewName) });
+      
+      const batch = writeBatch(db);
+      batch.update(categoriesDocRef, { list: arrayRemove(oldCategoryName) });
+      batch.update(categoriesDocRef, { list: arrayUnion(trimmedNewName) });
+      // Find expenses with the old category and update them
+      const expensesToUpdateQuery = query(collection(db, "expenses"), where("category", "==", oldCategoryName));
+      const expensesToUpdateSnap = await getDocs(expensesToUpdateQuery);
+      expensesToUpdateSnap.forEach(expenseDoc => {
+        batch.update(doc(db, "expenses", expenseDoc.id), { category: trimmedNewName });
+      });
+      await batch.commit();
       
       setCategories(prev => prev.map(c => c.toLowerCase() === oldCategoryName.toLowerCase() ? trimmedNewName : c).sort());
-      
-      // Update expenses using this category (this is a client-side update post category name change)
-      // This is complex with Firestore; ideally, expenses store category IDs, not names.
-      // For now, we'll just update client state. Batch update in Firestore is possible but harder.
       setExpenses(prevExpenses => prevExpenses.map(exp => 
         exp.category && exp.category.toLowerCase() === oldCategoryName.toLowerCase() 
           ? { ...exp, category: trimmedNewName } 
           : exp
       ));
-      // TODO: Batch update expenses in Firestore if category name changes. This is non-trivial.
       setIsLoading(false);
       return true;
     } catch (e: any) {
@@ -418,16 +442,23 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const categoriesDocRef = doc(db, "appConfig", "categories");
-      await updateDoc(categoriesDocRef, { list: arrayRemove(categoryName) });
+      const batch = writeBatch(db);
+      batch.update(categoriesDocRef, { list: arrayRemove(categoryName) });
+
+      // Find expenses with the category and clear it
+      const expensesToUpdateQuery = query(collection(db, "expenses"), where("category", "==", categoryName));
+      const expensesToUpdateSnap = await getDocs(expensesToUpdateQuery);
+      expensesToUpdateSnap.forEach(expenseDoc => {
+        batch.update(doc(db, "expenses", expenseDoc.id), { category: "" }); // Set to empty string or null
+      });
+      await batch.commit();
 
       setCategories(prev => prev.filter(c => c.toLowerCase() !== categoryName.toLowerCase()));
-      // Update expenses: clear category if it was removed
       setExpenses(prevExpenses => prevExpenses.map(exp =>
         exp.category && exp.category.toLowerCase() === categoryName.toLowerCase()
           ? { ...exp, category: undefined }
           : exp
       ));
-      // TODO: Batch update expenses in Firestore to remove/clear category.
       setIsLoading(false);
     } catch (e: any) {
       setIsLoading(false);
@@ -438,6 +469,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [toast]);
 
   const addSettlement = useCallback(async (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }): Promise<Expense> => {
+    // This function directly calls addExpense, which already handles setIsLoading
     const settlementExpenseData = {
       description: `Settlement: ${details.payerName} to ${details.recipientName}`,
       amount: details.amount,
@@ -485,3 +517,6 @@ export function useAppData() {
   }
   return context;
 }
+
+
+    
