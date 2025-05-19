@@ -22,17 +22,27 @@ export default function ExpensesPage() {
   const debts = useMemo(() => calculateDebts(expenses, users, currentUser?.id), [expenses, users, currentUser]);
 
   const filteredExpenses = useMemo(() => {
-    let expensesToShow = expenses; // Start with all expenses
+    if (!currentUser) {
+      return []; // If no user is selected, show no expenses
+    }
 
-    // Filter by searchTerm if there is one
-    if (!searchTerm) return expensesToShow;
-
-    return expensesToShow.filter(expense => 
-      expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (expense.category && expense.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    // 1. Filter by selected user
+    let userRelatedExpenses = expenses.filter(expense =>
+        expense.paidById === currentUser.id || expense.participantIds.includes(currentUser.id)
     );
-  }, [expenses, users, searchTerm]); // Removed currentUser dependency for this part
+
+    // 2. Filter by search term
+    if (searchTerm) {
+        userRelatedExpenses = userRelatedExpenses.filter(expense =>
+            expense.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (expense.category && expense.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
+            (users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+    }
+
+    // 3. Limit to 5 items
+    return userRelatedExpenses.slice(0, 5);
+  }, [expenses, users, currentUser, searchTerm]);
 
   const handleAddExpenseClick = () => {
     setEditingExpense(null);
@@ -51,7 +61,9 @@ export default function ExpensesPage() {
     }
   };
 
-  const noExpensesMessage = "No expenses recorded yet.";
+  const noExpensesMessage = currentUser
+    ? (searchTerm ? "No expenses found matching your search." : "You have no recent expenses.")
+    : "Please select a user profile to see recent expenses.";
 
   return (
     <div className="space-y-6">
@@ -66,7 +78,7 @@ export default function ExpensesPage() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
         <Input 
-          placeholder="Search expenses..." 
+          placeholder="Search recent expenses..." 
           className="pl-10"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -77,10 +89,11 @@ export default function ExpensesPage() {
         <h3 className="text-xl font-semibold mb-3">Recent Expenses</h3>
         {filteredExpenses.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">
-            {noExpensesMessage} <br/>Click &quot;Add Expense&quot; to get started!
+            {noExpensesMessage} <br/>
+            {currentUser && !searchTerm && "Click \"Add Expense\" to get started!"}
           </p>
         ) : (
-          <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height as needed, may need tweaking after layout change */}
+          <ScrollArea className="h-[calc(100vh-28rem)]"> {/* Adjust height if limiting to 5 items makes this too tall */}
             <div className="space-y-4 pr-2">
             {filteredExpenses.map(expense => {
               const eventName = events.find(e => e.id === expense.eventId)?.name;
