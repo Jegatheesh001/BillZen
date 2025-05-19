@@ -22,17 +22,9 @@ export default function ExpensesPage() {
   const debts = useMemo(() => calculateDebts(expenses, users, currentUser?.id), [expenses, users, currentUser]);
 
   const filteredExpenses = useMemo(() => {
-    let expensesToShow = expenses;
+    let expensesToShow = expenses; // Start with all expenses
 
-    // Filter by currentUser if one is selected
-    if (currentUser) {
-      expensesToShow = expenses.filter(expense =>
-        expense.paidById === currentUser.id ||
-        expense.participantIds.includes(currentUser.id)
-      );
-    }
-
-    // Then, filter by searchTerm if there is one
+    // Filter by searchTerm if there is one
     if (!searchTerm) return expensesToShow;
 
     return expensesToShow.filter(expense => 
@@ -40,7 +32,7 @@ export default function ExpensesPage() {
       (expense.category && expense.category.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (users.find(u => u.id === expense.paidById)?.name.toLowerCase().includes(searchTerm.toLowerCase()))
     );
-  }, [expenses, users, currentUser, searchTerm]);
+  }, [expenses, users, searchTerm]); // Removed currentUser dependency for this part
 
   const handleAddExpenseClick = () => {
     setEditingExpense(null);
@@ -59,14 +51,11 @@ export default function ExpensesPage() {
     }
   };
 
-  const noExpensesMessage = currentUser 
-    ? "No expenses involving you yet." 
-    : "No expenses recorded yet.";
+  const noExpensesMessage = "No expenses recorded yet.";
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end items-center"> {/* Removed justify-between, title removed */}
-        {/* Title "Expenses" h2 removed from here */}
+      <div className="flex justify-end items-center">
         <Button onClick={handleAddExpenseClick} size="sm" className="rounded-full">
           <PlusCircle className="mr-2 h-5 w-5" /> Add Expense
         </Button>
