@@ -68,8 +68,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     addExpense: addAppDataExpense, 
     updateExpense: updateAppDataExpense, 
     currentUser,
-    isLoading, // Global loading state from context
-    persistenceMode 
+    // isLoading, // Global loading state from context removed
+    // persistenceMode // Removed
   } = useAppData();
   const { toast } = useToast();
   const [customCategoryInput, setCustomCategoryInput] = useState('');
@@ -175,7 +175,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     displayCategories.sort();
   }
 
-  const formDisabled = isLoading || isSubmitting;
+  const formDisabled = isSubmitting; // Only local submitting state
 
 
   return (
@@ -185,7 +185,8 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         <div className="p-6">
         <SheetHeader>
           <SheetTitle>{sheetTitle}</SheetTitle>
-          <SheetDescription>{sheetDescription} (Mode: {persistenceMode})</SheetDescription>
+          {/* persistenceMode removed from description */}
+          <SheetDescription>{sheetDescription}</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">

@@ -1,7 +1,7 @@
 
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react'; // Added useState for local loading
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -27,8 +27,9 @@ const addUserFormSchema = z.object({
 type AddUserFormValues = z.infer<typeof addUserFormSchema>;
 
 export function AddUserForm() {
-  const { addUser, isLoading, persistenceMode } = useAppData();
+  const { addUser } = useAppData(); // Removed isLoading and persistenceMode from context destructuring
   const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local loading state
 
   const form = useForm<AddUserFormValues>({
     resolver: zodResolver(addUserFormSchema),
@@ -39,11 +40,13 @@ export function AddUserForm() {
   });
 
   async function onSubmit(data: AddUserFormValues) {
+    setIsSubmitting(true);
     try {
       const newUser = await addUser(data.name, data.avatarUrl || undefined);
       toast({
         title: "User Added",
-        description: `${newUser.name} has been added ${persistenceMode === 'api' ? 'via API' : 'locally'}.`,
+        // Description simplified as persistenceMode is removed for now
+        description: `${newUser.name} has been added.`, 
       });
       form.reset();
     } catch (error: any) {
@@ -52,6 +55,8 @@ export function AddUserForm() {
         description: error.message || "An unexpected error occurred.",
         variant: "destructive",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -65,7 +70,7 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>User Name</FormLabel>
               <FormControl>
-                <Input placeholder="Enter user's name" {...field} disabled={isLoading} />
+                <Input placeholder="Enter user's name" {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -78,14 +83,14 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>Avatar URL (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="https://example.com/avatar.png" {...field} disabled={isLoading} />
+                <Input placeholder="https://example.com/avatar.png" {...field} disabled={isSubmitting} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full sm:w-auto" disabled={isLoading}>
-          {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Add User
         </Button>
       </form>

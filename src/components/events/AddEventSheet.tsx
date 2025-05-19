@@ -49,8 +49,8 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     users, 
     addEvent: addAppDataEvent, 
     updateEvent: updateAppDataEvent, 
-    isLoading, // Global loading state
-    persistenceMode 
+    // isLoading, // Global loading state removed
+    // persistenceMode // Removed
   } = useAppData();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
@@ -107,7 +107,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     ? "Modify the details of the event."
     : "Group expenses by creating an event. Select members for this event.";
   const submitButtonText = eventToEdit ? "Save Changes" : "Create Event";
-  const formDisabled = isLoading || isSubmitting;
+  const formDisabled = isSubmitting; // Only local submitting state
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -117,7 +117,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
             <SheetHeader>
               <SheetTitle>{sheetTitle}</SheetTitle>
               <SheetDescription>
-                {sheetDescription} (Mode: {persistenceMode})
+                {sheetDescription} {/* persistenceMode removed */}
               </SheetDescription>
             </SheetHeader>
             <Form {...form}>

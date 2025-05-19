@@ -33,7 +33,8 @@ import { Label } from '@/components/ui/label';
 
 
 export function ManageCategories() {
-  const { categories, addCategory, updateCategory, removeCategory, isLoading, persistenceMode } = useAppData();
+  // Removed isLoading and persistenceMode from context destructuring
+  const { categories, addCategory, updateCategory, removeCategory } = useAppData();
   const [newCategory, setNewCategory] = useState('');
   const { toast } = useToast();
 
@@ -54,7 +55,8 @@ export function ManageCategories() {
         toast({ title: "Category Added", description: `"${newCategory}" has been added.` });
         setNewCategory('');
       } else {
-        toast({ title: "Already Exists or API Error", description: `Category "${newCategory}" may already exist or an API error occurred.`, variant: "destructive" });
+        // Simplified error as API context is removed for now
+        toast({ title: "Already Exists", description: `Category "${newCategory}" may already exist.`, variant: "destructive" });
       }
     } catch (error: any) {
        toast({ title: "Error Adding Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
@@ -84,7 +86,7 @@ export function ManageCategories() {
       if (success) {
         toast({ title: "Category Updated", description: `"${categoryToEdit}" updated to "${editedCategoryName}".` });
       } else {
-         toast({ title: "Already Exists or API Error", description: `Category "${editedCategoryName}" may already exist or an API error occurred.`, variant: "destructive" });
+         toast({ title: "Already Exists", description: `Category "${editedCategoryName}" may already exist.`, variant: "destructive" });
       }
     } catch (error: any) {
        toast({ title: "Error Updating Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
@@ -107,13 +109,14 @@ export function ManageCategories() {
     }
   };
   
-  const combinedLoading = isLoading || isSubmitting;
+  // const combinedLoading = isLoading || isSubmitting; // isLoading from context removed
 
   return (
     <Card className="shadow-lg rounded-xl">
       <CardHeader>
         <CardTitle>Manage Expense Categories</CardTitle>
-        <CardDescription>Add, edit, or remove expense categories. Current mode: {persistenceMode}</CardDescription>
+        {/* persistenceMode removed from description */}
+        <CardDescription>Add, edit, or remove expense categories.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex gap-2 items-end">
@@ -126,7 +129,7 @@ export function ManageCategories() {
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               className="w-full"
-              disabled={combinedLoading}
+              disabled={isSubmitting} // Only local submitting state
             />
           </div>
           <Button 
@@ -135,9 +138,9 @@ export function ManageCategories() {
             variant="outline" 
             aria-label="Add new category"
             title="Add new category"
-            disabled={combinedLoading}
+            disabled={isSubmitting} // Only local submitting state
           >
-            {combinedLoading && !isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
+            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
           </Button>
         </div>
 
@@ -153,13 +156,13 @@ export function ManageCategories() {
                   >
                     <span>{category}</span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={combinedLoading}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={isSubmitting}>
                         <Edit3 className="h-4 w-4" />
                          <span className="sr-only">Edit {category}</span>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={combinedLoading}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={isSubmitting}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Remove {category}</span>
                           </Button>
@@ -191,7 +194,8 @@ export function ManageCategories() {
             </ScrollArea>
           ) : (
             <p className="text-sm text-muted-foreground text-center py-4">
-              {isLoading && persistenceMode === 'api' ? 'Loading categories...' : 'No categories defined yet. Add some!'}
+              {/* persistenceMode and isLoading removed from message */}
+              {'No categories defined yet. Add some!'}
             </p>
           )}
         </div>
