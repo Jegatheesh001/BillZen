@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useEffect, useState } from 'react';
@@ -19,7 +20,8 @@ import {
 } from '@/components/ui/form';
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
-import { Camera } from 'lucide-react';
+import { Camera, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation'; // Import useRouter
 
 const profileFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -29,10 +31,11 @@ const profileFormSchema = z.object({
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
 export function ProfileForm() {
-  const { currentUser, updateUser, setCurrentUserById, users } = useAppData();
+  const { currentUser, updateUser, setCurrentUserById, users, isLoading: isAppLoading } = useAppData();
   const { toast } = useToast();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(currentUser?.id || null);
-
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter(); // Initialize router
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -53,41 +56,62 @@ export function ProfileForm() {
       // If no current user but users exist, set the first one as current
       setCurrentUserById(users[0].id);
       setSelectedUserId(users[0].id);
+      // Do not navigate here as this is an initial setup
     }
   }, [currentUser, form, users, setCurrentUserById]);
   
   const handleUserChange = (userId: string) => {
     setCurrentUserById(userId);
     setSelectedUserId(userId);
+    router.push('/expenses'); // Navigate to Dashboard
   };
 
 
-  function onSubmit(data: ProfileFormValues) {
+  async function onSubmit(data: ProfileFormValues) {
     if (!currentUser) {
       toast({ title: "Error", description: "No user selected.", variant: "destructive" });
       return;
     }
-    const newAvatarUrl = data.avatarUrl || `https://placehold.co/100x100.png?text=${data.name.charAt(0).toUpperCase()}`;
-    updateUser(currentUser.id, data.name, newAvatarUrl);
-    toast({ title: "Profile Updated", description: "Your profile has been successfully updated." });
+    setIsSubmitting(true);
+    try {
+      const newAvatarUrl = data.avatarUrl || `https://placehold.co/100x100.png?text=${data.name.charAt(0).toUpperCase()}`;
+      await updateUser(currentUser.id, data.name, newAvatarUrl);
+      toast({ title: "Profile Updated", description: "Your profile has been successfully updated." });
+    } catch (error: any) {
+        toast({ title: "Error Updating Profile", description: error.message || "Failed to update profile.", variant: "destructive" });
+    } finally {
+        setIsSubmitting(false);
+    }
   }
 
-  if (!currentUser && users.length === 0) {
+  if (!currentUser && users.length === 0 && !isAppLoading) {
     return (
       <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
         <CardHeader>
           <CardTitle>Profile</CardTitle>
         </CardHeader>
         <CardContent>
-          <p>No users available. Please add users first (feature to be implemented).</p>
+          <p>No users available. Please add users first in Settings.</p>
         </CardContent>
       </Card>
     );
   }
   
-  if (!currentUser && users.length > 0 && !selectedUserId) {
-     // This case should ideally be handled by useEffect setting a default user.
-     // If still no current user, prompt to select one.
+  if (isAppLoading && !currentUser) {
+    return (
+        <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
+            <CardHeader className="items-center text-center">
+                <CardTitle>Profile</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center h-40">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="mt-2 text-muted-foreground">Loading profile...</p>
+            </CardContent>
+        </Card>
+    )
+  }
+  
+  if (!currentUser && users.length > 0 && !selectedUserId && !isAppLoading) {
      return (
         <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
           <CardHeader>
@@ -109,6 +133,7 @@ export function ProfileForm() {
      )
   }
 
+  const formDisabled = isSubmitting || isAppLoading;
 
   return (
     <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
@@ -119,12 +144,17 @@ export function ProfileForm() {
             <AvatarFallback>{currentUser?.name.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
           </Avatar>
            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-             onClick={() => { /* Open avatar change modal or input */ alert("Avatar change feature: To prompt for URL or upload.")}}>
+             onClick={() => { 
+                 const newUrl = prompt("Enter new avatar URL:", currentUser?.avatarUrl || "");
+                 if (newUrl !== null) { // Check if prompt was not cancelled
+                    form.setValue('avatarUrl', newUrl);
+                 }
+              }}>
             <Camera className="h-8 w-8 text-white" />
           </div>
         </div>
         <CardTitle className="text-2xl">{currentUser?.name || 'User Profile'}</CardTitle>
-        <CardDescription>Manage your personal information.</CardDescription>
+        <CardDescription>Manage your personal information. Data is stored in Firebase.</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -136,7 +166,7 @@ export function ProfileForm() {
                 <FormItem>
                   <FormLabel>Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Your Name" {...field} />
+                    <Input placeholder="Your Name" {...field} disabled={formDisabled} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -149,13 +179,14 @@ export function ProfileForm() {
                 <FormItem>
                   <FormLabel>Avatar URL (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="https://example.com/avatar.png" {...field} />
+                    <Input placeholder="https://example.com/avatar.png" {...field} disabled={formDisabled} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground">
+            <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formDisabled}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>
           </form>
@@ -165,7 +196,13 @@ export function ProfileForm() {
             <Label>Switch Profile:</Label>
             <div className="space-y-2 mt-2">
             {users.filter(u => u.id !== currentUser?.id).map(user => (
-              <Button key={user.id} variant="outline" className="w-full justify-start" onClick={() => handleUserChange(user.id)}>
+              <Button 
+                key={user.id} 
+                variant="outline" 
+                className="w-full justify-start" 
+                onClick={() => handleUserChange(user.id)}
+                disabled={isAppLoading}
+              >
                   <Avatar className="h-6 w-6 mr-2">
                     <AvatarImage src={user.avatarUrl} data-ai-hint="person portrait"/>
                     <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
@@ -180,3 +217,4 @@ export function ProfileForm() {
     </Card>
   );
 }
+
