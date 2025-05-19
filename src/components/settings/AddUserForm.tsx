@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState } from 'react'; // Added useState for local loading
+import React, { useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import * as z from 'zod';
@@ -27,9 +27,9 @@ const addUserFormSchema = z.object({
 type AddUserFormValues = z.infer<typeof addUserFormSchema>;
 
 export function AddUserForm() {
-  const { addUser } = useAppData(); // Removed isLoading and persistenceMode from context destructuring
+  const { addUser, isLoading: isAppLoading } = useAppData();
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<AddUserFormValues>({
     resolver: zodResolver(addUserFormSchema),
@@ -45,8 +45,7 @@ export function AddUserForm() {
       const newUser = await addUser(data.name, data.avatarUrl || undefined);
       toast({
         title: "User Added",
-        // Description simplified as persistenceMode is removed for now
-        description: `${newUser.name} has been added.`, 
+        description: `${newUser.name} has been added to Firebase.`, 
       });
       form.reset();
     } catch (error: any) {
@@ -59,6 +58,8 @@ export function AddUserForm() {
       setIsSubmitting(false);
     }
   }
+  
+  const formDisabled = isSubmitting || isAppLoading;
 
   return (
     <Form {...form}>
@@ -70,7 +71,7 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>User Name</FormLabel>
               <FormControl>
-                <Input placeholder="Enter user's name" {...field} disabled={isSubmitting} />
+                <Input placeholder="Enter user's name" {...field} disabled={formDisabled} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -83,13 +84,13 @@ export function AddUserForm() {
             <FormItem>
               <FormLabel>Avatar URL (Optional)</FormLabel>
               <FormControl>
-                <Input placeholder="https://example.com/avatar.png" {...field} disabled={isSubmitting} />
+                <Input placeholder="https://example.com/avatar.png" {...field} disabled={formDisabled} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting}>
+        <Button type="submit" className="w-full sm:w-auto" disabled={formDisabled}>
           {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Add User
         </Button>

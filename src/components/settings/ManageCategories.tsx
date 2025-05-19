@@ -33,15 +33,14 @@ import { Label } from '@/components/ui/label';
 
 
 export function ManageCategories() {
-  // Removed isLoading and persistenceMode from context destructuring
-  const { categories, addCategory, updateCategory, removeCategory } = useAppData();
+  const { categories, addCategory, updateCategory, removeCategory, isLoading: isAppLoading } = useAppData();
   const [newCategory, setNewCategory] = useState('');
   const { toast } = useToast();
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState<string | null>(null);
   const [editedCategoryName, setEditedCategoryName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local loading state for category actions
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleAddCategory = async () => {
     if (!newCategory.trim()) {
@@ -55,7 +54,6 @@ export function ManageCategories() {
         toast({ title: "Category Added", description: `"${newCategory}" has been added.` });
         setNewCategory('');
       } else {
-        // Simplified error as API context is removed for now
         toast({ title: "Already Exists", description: `Category "${newCategory}" may already exist.`, variant: "destructive" });
       }
     } catch (error: any) {
@@ -109,14 +107,13 @@ export function ManageCategories() {
     }
   };
   
-  // const combinedLoading = isLoading || isSubmitting; // isLoading from context removed
+  const formDisabled = isSubmitting || isAppLoading;
 
   return (
     <Card className="shadow-lg rounded-xl">
       <CardHeader>
         <CardTitle>Manage Expense Categories</CardTitle>
-        {/* persistenceMode removed from description */}
-        <CardDescription>Add, edit, or remove expense categories.</CardDescription>
+        <CardDescription>Add, edit, or remove expense categories. Data is stored in Firebase.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex gap-2 items-end">
@@ -129,7 +126,7 @@ export function ManageCategories() {
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               className="w-full"
-              disabled={isSubmitting} // Only local submitting state
+              disabled={formDisabled}
             />
           </div>
           <Button 
@@ -138,7 +135,7 @@ export function ManageCategories() {
             variant="outline" 
             aria-label="Add new category"
             title="Add new category"
-            disabled={isSubmitting} // Only local submitting state
+            disabled={formDisabled}
           >
             {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
           </Button>
@@ -146,7 +143,12 @@ export function ManageCategories() {
 
         <div>
           <h3 className="text-md font-medium mb-2">Current Categories:</h3>
-          {categories.length > 0 ? (
+          {isAppLoading && categories.length === 0 ? (
+             <div className="flex items-center justify-center h-20">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="ml-2 text-muted-foreground">Loading categories...</p>
+              </div>
+          ) : categories.length > 0 ? (
             <ScrollArea className="h-60 border rounded-md">
               <ul className="p-2">
                 {categories.map((category) => (
@@ -156,13 +158,13 @@ export function ManageCategories() {
                   >
                     <span>{category}</span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={isSubmitting}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={formDisabled}>
                         <Edit3 className="h-4 w-4" />
                          <span className="sr-only">Edit {category}</span>
                       </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={isSubmitting}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={formDisabled}>
                             <Trash2 className="h-4 w-4" />
                             <span className="sr-only">Remove {category}</span>
                           </Button>
@@ -171,7 +173,7 @@ export function ManageCategories() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This action will remove the category "{category}". Expenses using this category will have it cleared.
+                              This action will remove the category "{category}". Expenses using this category will have it cleared (client-side, backend update for expenses may be needed).
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -179,7 +181,7 @@ export function ManageCategories() {
                             <AlertDialogAction 
                               onClick={() => handleRemoveCategory(category)} 
                               className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                              disabled={isSubmitting}
+                              disabled={isSubmitting || isAppLoading}
                             >
                               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                               Remove
@@ -194,14 +196,13 @@ export function ManageCategories() {
             </ScrollArea>
           ) : (
             <p className="text-sm text-muted-foreground text-center py-4">
-              {/* persistenceMode and isLoading removed from message */}
-              {'No categories defined yet. Add some!'}
+              {isAppLoading ? 'Loading...' : 'No categories defined yet. Add some!'}
             </p>
           )}
         </div>
       </CardContent>
 
-      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { if (!isSubmitting) setIsEditDialogOpen(open); }}>
+      <Dialog open={isEditDialogOpen} onOpenChange={(open) => { if (!formDisabled) setIsEditDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Category</DialogTitle>
@@ -216,16 +217,16 @@ export function ManageCategories() {
               value={editedCategoryName}
               onChange={(e) => setEditedCategoryName(e.target.value)}
               placeholder="Enter new category name"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isAppLoading}
             />
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" onClick={() => { if (!isSubmitting) setCategoryToEdit(null);}} disabled={isSubmitting}>
+              <Button variant="outline" onClick={() => { if (!formDisabled) setCategoryToEdit(null);}} disabled={isSubmitting || isAppLoading}>
                 <XCircle className="mr-2 h-4 w-4" /> Cancel
               </Button>
             </DialogClose>
-            <Button onClick={handleSaveEdit} disabled={isSubmitting}>
+            <Button onClick={handleSaveEdit} disabled={isSubmitting || isAppLoading}>
               {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle className="mr-2 h-4 w-4" /> Save Changes
             </Button>

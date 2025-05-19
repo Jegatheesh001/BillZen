@@ -68,12 +68,11 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     addExpense: addAppDataExpense, 
     updateExpense: updateAppDataExpense, 
     currentUser,
-    // isLoading, // Global loading state from context removed
-    // persistenceMode // Removed
+    isLoading: isAppLoading,
   } = useAppData();
   const { toast } = useToast();
   const [customCategoryInput, setCustomCategoryInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<ExpenseFormValues>({
     resolver: zodResolver(expenseFormSchema),
@@ -102,7 +101,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       form.reset({
         description: '',
         amount: 0,
-        paidById: currentUser?.id || users[0]?.id || '',
+        paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
         participantIds: users.map(u => u.id),
         eventId: NO_EVENT_VALUE,
         category: NO_CATEGORY_VALUE,
@@ -144,7 +143,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       form.reset({
           description: '',
           amount: 0,
-          paidById: currentUser?.id || users[0]?.id || '',
+          paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
           participantIds: users.map(u => u.id),
           eventId: NO_EVENT_VALUE,
           category: NO_CATEGORY_VALUE,
@@ -175,7 +174,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
     displayCategories.sort();
   }
 
-  const formDisabled = isSubmitting; // Only local submitting state
+  const formDisabled = isSubmitting || isAppLoading;
 
 
   return (
@@ -185,8 +184,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         <div className="p-6">
         <SheetHeader>
           <SheetTitle>{sheetTitle}</SheetTitle>
-          {/* persistenceMode removed from description */}
-          <SheetDescription>{sheetDescription}</SheetDescription>
+          <SheetDescription>{sheetDescription} Data stored in Firebase.</SheetDescription>
         </SheetHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
@@ -222,7 +220,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Paid by</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} disabled={formDisabled}>
+                  <Select onValueChange={field.onChange} value={field.value} disabled={formDisabled || users.length === 0}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Select who paid" />
@@ -289,7 +287,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Event (Optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} disabled={formDisabled}>
+                  <Select onValueChange={field.onChange} value={field.value || NO_EVENT_VALUE} disabled={formDisabled || events.length === 0}>
                     <FormControl>
                       <SelectTrigger>
                         <SelectValue placeholder="Assign to an event" />

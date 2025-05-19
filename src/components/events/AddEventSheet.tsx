@@ -49,11 +49,10 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     users, 
     addEvent: addAppDataEvent, 
     updateEvent: updateAppDataEvent, 
-    // isLoading, // Global loading state removed
-    // persistenceMode // Removed
+    isLoading: isAppLoading,
   } = useAppData();
   const { toast } = useToast();
-  const [isSubmitting, setIsSubmitting] = useState(false); // Local submitting state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
 
   const form = useForm<EventFormValues>({
@@ -107,7 +106,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
     ? "Modify the details of the event."
     : "Group expenses by creating an event. Select members for this event.";
   const submitButtonText = eventToEdit ? "Save Changes" : "Create Event";
-  const formDisabled = isSubmitting; // Only local submitting state
+  const formDisabled = isSubmitting || isAppLoading;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -117,7 +116,7 @@ export function AddEventSheet({ open, onOpenChange, eventToEdit }: AddEventSheet
             <SheetHeader>
               <SheetTitle>{sheetTitle}</SheetTitle>
               <SheetDescription>
-                {sheetDescription} {/* persistenceMode removed */}
+                {sheetDescription} Data stored in Firebase.
               </SheetDescription>
             </SheetHeader>
             <Form {...form}>
