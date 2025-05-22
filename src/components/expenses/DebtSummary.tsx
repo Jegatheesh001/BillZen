@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from '@/lib/utils';
 
 interface DebtSummaryProps {
   debts: Debt[];
@@ -100,10 +101,7 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
     const recipientName: string = otherUser.name;
 
     addSettlement({ payerId, recipientId, amount: amountToSettle, payerName, recipientName });
-    toast({
-      title: "Settlement Recorded",
-      description: `Settlement of $${amountToSettle.toFixed(2)} from ${payerName} to ${recipientName} recorded.`,
-    });
+    // Toast for settlement success is handled by addSettlement in context
   };
   
   return (
@@ -126,12 +124,12 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                 if (isCurrentUserEntry) {
                     namePrefix = "Your Overall Balance";
                     if (debt.balance === 0) balanceTextSuffix = '(Settled with the group)';
-                    else if (debt.balance > 0) balanceTextSuffix = `(Owed by group)`; // Green
-                    else balanceTextSuffix = `(Owes to group)`; // Red
+                    else if (debt.balance > 0) balanceTextSuffix = `(Owed by group)`;
+                    else balanceTextSuffix = `(Owes to group)`;
                 } else { 
                     // For other users, relative to current user
-                    if (debt.balance > 0) balanceTextSuffix = `(Owes you)`; // Green (Other user owes current user)
-                    else balanceTextSuffix = `(You owe)`; // Red (Current user owes other user)
+                    if (debt.balance > 0) balanceTextSuffix = `(Owes you)`; 
+                    else balanceTextSuffix = `(You owe)`; 
                 }
             } else { 
                 if (debt.balance === 0) balanceTextSuffix = '(Settled)';
@@ -139,24 +137,30 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                 else balanceTextSuffix = `(owes)`;
             }
             
-            // Show settle button if current user owes this other user (debt.balance < 0 for this other user's entry)
             const showSettleButton = currentUserId && !isCurrentUserEntry && debt.balance < 0;
 
             return (
-              <li key={debt.userId} className="flex items-center justify-between p-3 bg-secondary/30 rounded-lg">
+              <li 
+                key={debt.userId} 
+                className={cn(
+                  "flex items-center justify-between p-3 rounded-lg",
+                  isCurrentUserEntry ? "bg-primary/10 border border-primary/30 shadow-sm" : "bg-secondary/30"
+                )}
+              >
                 <div className="flex items-center">
                   <Avatar className="h-8 w-8 mr-3">
                     <AvatarImage src={debt.avatarUrl} alt={debt.userName} data-ai-hint="person portrait" />
                     <AvatarFallback>{debt.userName.charAt(0)}</AvatarFallback>
                   </Avatar>
-                  <span className="font-medium">{namePrefix}</span>
+                  <span className={cn("font-medium", isCurrentUserEntry && "text-primary font-semibold")}>{namePrefix}</span>
                 </div>
                 <div className="flex items-center">
                   <div className={`flex items-center font-semibold mr-2 ${debt.balance === 0 ? 'text-muted-foreground' : debt.balance > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {debt.balance === 0 ? <Scale className="h-5 w-5 mr-1" /> : debt.balance > 0 ? 
-                      <TrendingUp className="h-5 w-5 mr-1" /> : 
-                      <TrendingDown className="h-5 w-5 mr-1" />
-                    }
+                    {!isCurrentUserEntry && ( // Only show icon if NOT current user's overall balance
+                       debt.balance === 0 ? <Scale className="h-5 w-5 mr-1" /> : debt.balance > 0 ? 
+                       <TrendingUp className="h-5 w-5 mr-1" /> : 
+                       <TrendingDown className="h-5 w-5 mr-1" />
+                    )}
                     ${amountDisplay}
                     <span className="text-xs font-normal ml-1 text-muted-foreground">
                       {balanceTextSuffix}
@@ -173,7 +177,7 @@ export function DebtSummary({ debts, currentUserId }: DebtSummaryProps) {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Confirm Settlement</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Record that you (<strong>{currentUser?.name}</strong>) have paid <strong>{currentDebtEntryForDialog?.userName}</strong>.
+                            You (<strong>{currentUser?.name}</strong>) are recording a payment to <strong>{currentDebtEntryForDialog?.userName}</strong>.
                             <br/>This will create a new "Settlement" expense.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
