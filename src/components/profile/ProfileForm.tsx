@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation'; // Import useRouter
 const profileFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
   avatarUrl: z.string().url("Must be a valid URL for avatar.").optional().or(z.literal('')),
+  email: z.string().email("Invalid email address.").optional().or(z.literal('')),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -42,6 +43,7 @@ export function ProfileForm() {
     defaultValues: {
       name: '',
       avatarUrl: '',
+      email: '',
     },
   });
 
@@ -50,20 +52,19 @@ export function ProfileForm() {
       form.reset({
         name: currentUser.name,
         avatarUrl: currentUser.avatarUrl,
+        email: currentUser.email || '',
       });
       setSelectedUserId(currentUser.id);
     } else if (users.length > 0 && !currentUser) {
-      // If no current user but users exist, set the first one as current
       setCurrentUserById(users[0].id);
       setSelectedUserId(users[0].id);
-      // Do not navigate here as this is an initial setup
     }
   }, [currentUser, form, users, setCurrentUserById]);
   
   const handleUserChange = (userId: string) => {
     setCurrentUserById(userId);
     setSelectedUserId(userId);
-    router.push('/expenses'); // Navigate to Dashboard
+    router.push('/expenses'); 
   };
 
 
@@ -75,7 +76,7 @@ export function ProfileForm() {
     setIsSubmitting(true);
     try {
       const newAvatarUrl = data.avatarUrl || `https://placehold.co/100x100.png?text=${data.name.charAt(0).toUpperCase()}`;
-      await updateUser(currentUser.id, data.name, newAvatarUrl);
+      await updateUser(currentUser.id, data.name, newAvatarUrl, data.email || undefined);
       toast({ title: "Profile Updated", description: "Your profile has been successfully updated." });
     } catch (error: any) {
         toast({ title: "Error Updating Profile", description: error.message || "Failed to update profile.", variant: "destructive" });
@@ -145,8 +146,8 @@ export function ProfileForm() {
           </Avatar>
            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
              onClick={() => { 
-                 const newUrl = prompt("Enter new avatar URL:", currentUser?.avatarUrl || "");
-                 if (newUrl !== null) { // Check if prompt was not cancelled
+                 const newUrl = prompt("Enter new avatar URL:", form.getValues('avatarUrl') || currentUser?.avatarUrl || "");
+                 if (newUrl !== null) { 
                     form.setValue('avatarUrl', newUrl);
                  }
               }}>
@@ -185,8 +186,21 @@ export function ProfileForm() {
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email (Optional)</FormLabel>
+                  <FormControl>
+                    <Input type="email" placeholder="user@example.com" {...field} disabled={formDisabled}/>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <Button type="submit" className="w-full bg-accent hover:bg-accent/90 text-accent-foreground" disabled={formDisabled}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {formDisabled && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>
           </form>
@@ -217,4 +231,3 @@ export function ProfileForm() {
     </Card>
   );
 }
-

@@ -22,6 +22,7 @@ import { Loader2 } from 'lucide-react';
 const addUserFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
   avatarUrl: z.string().url("Must be a valid URL or empty.").optional().or(z.literal('')),
+  email: z.string().email("Invalid email address.").optional().or(z.literal('')),
 });
 
 type AddUserFormValues = z.infer<typeof addUserFormSchema>;
@@ -36,13 +37,14 @@ export function AddUserForm() {
     defaultValues: {
       name: '',
       avatarUrl: '',
+      email: '',
     },
   });
 
   async function onSubmit(data: AddUserFormValues) {
     setIsSubmitting(true);
     try {
-      const newUser = await addUser(data.name, data.avatarUrl || undefined);
+      const newUser = await addUser(data.name, data.avatarUrl || undefined, data.email || undefined);
       toast({
         title: "User Added",
         description: `${newUser.name} has been added to Firebase.`, 
@@ -85,6 +87,19 @@ export function AddUserForm() {
               <FormLabel>Avatar URL (Optional)</FormLabel>
               <FormControl>
                 <Input placeholder="https://example.com/avatar.png" {...field} disabled={formDisabled} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email (Optional)</FormLabel>
+              <FormControl>
+                <Input type="email" placeholder="user@example.com" {...field} disabled={formDisabled} />
               </FormControl>
               <FormMessage />
             </FormItem>

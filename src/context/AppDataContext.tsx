@@ -30,9 +30,9 @@ import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
 
 
 const DEFAULT_USERS_DATA_SEED: Omit<User, 'id'>[] = [
-  { name: 'Alice', avatarUrl: 'https://placehold.co/100x100.png?text=A' },
+  { name: 'Alice', avatarUrl: 'https://placehold.co/100x100.png?text=A', email: 'alice@example.com' },
   { name: 'Bob', avatarUrl: 'https://placehold.co/100x100.png?text=B' },
-  { name: 'Charlie', avatarUrl: 'https://placehold.co/100x100.png?text=C' },
+  { name: 'Charlie', avatarUrl: 'https://placehold.co/100x100.png?text=C', email: 'charlie@example.com' },
 ];
 
 const INITIAL_CATEGORIES_DATA_SEED: string[] = [
@@ -49,13 +49,13 @@ interface AppDataContextState {
   firebaseUser: FirebaseUser | null;
   isLoading: boolean;
   error: string | null;
-  addUser: (name: string, avatarUrl?: string, firebaseUid?: string) => Promise<User>;
+  addUser: (name: string, avatarUrl?: string, email?: string, firebaseUid?: string) => Promise<User>;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'>) => Promise<Expense | null>;
   updateExpense: (expenseId: string, updatedData: Partial<Omit<Expense, 'id' | 'date'>>) => Promise<void>;
   deleteExpense: (expenseId: string) => Promise<void>;
   addEvent: (eventData: EventFormData) => Promise<Event | null>;
   updateEvent: (eventId: string, updatedData: Partial<EventFormData>) => Promise<void>;
-  updateUser: (userId: string, name: string, avatarUrl?: string) => Promise<void>;
+  updateUser: (userId: string, name: string, avatarUrl?: string, email?: string) => Promise<void>;
   setCurrentUserById: (userId: string | null) => void;
   addCategory: (categoryName: string) => Promise<boolean>;
   updateCategory: (oldCategoryName: string, newCategoryName: string) => Promise<boolean>;
@@ -91,12 +91,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // Handles Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (fbUser) => {
-      setFirebaseUser(fbUser); // This will trigger the main data loading useEffect
+      setFirebaseUser(fbUser); 
       if (!fbUser) {
         setCurrentUser(null); 
         localStorage.removeItem('currentUserId');
       }
-      // Do not set isLoading to false here, main data loader handles it
     });
     return () => unsubscribe();
   }, []);
@@ -105,7 +104,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const fetchData = useCallback(async () => {
     if (!db) {
       setError("Firebase not initialized correctly.");
-      // Return a resolved promise with a structure indicating completion for the calling useEffect
       return { fetchedUsers: [], initialLoadComplete: true, wasError: true };
     }
     
@@ -153,7 +151,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
       setCategories(currentCategories);
       
-      // Seed users only if no users exist and no one is logged in via Firebase Auth
       if (fetchedUsersList.length === 0 && !auth.currentUser) { 
           const batch = writeBatch(db);
           const seededUsers: User[] = [];
@@ -174,23 +171,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to load data from Firebase.");
       return { fetchedUsers: [], initialLoadComplete: true, wasError: true };
+    } finally {
+      setIsLoading(false); // Ensure loading is false after fetch attempt
     }
-  }, [toast]); // Minimal stable dependencies
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // Minimal stable dependencies, fetchData itself doesn't need more
 
   // Effect to load data and then set current user
   useEffect(() => {
     let isMounted = true;
   
     const loadDataAndSetUser = async () => {
-      // fetchData will set isLoading to true at its start
+      // fetchData will set isLoading to true at its start, and false at its end.
       const { fetchedUsers, initialLoadComplete, wasError } = await fetchData();
   
       if (!isMounted || !initialLoadComplete) {
-        if(isMounted && wasError) setIsLoading(false); // Ensure loading stops if fetchData errored
+        if(isMounted && wasError && !isLoading) setIsLoading(false); // Ensure loading stops if fetchData errored and didn't set it
         return;
       }
   
-      if (auth.currentUser) { // Check current auth state directly
+      if (auth.currentUser) {
         const fbUser = auth.currentUser;
         const userDocRef = doc(db, "users", fbUser.uid);
         try {
@@ -202,9 +202,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
                     localStorage.setItem('currentUserId', appUser.id);
                 }
             } else {
+                // User authenticated with Firebase but doesn't have an app profile yet
                 const newUserPayload: Omit<User, 'id'> = {
                     name: fbUser.displayName || `User-${fbUser.uid.substring(0,5)}`,
                     avatarUrl: fbUser.photoURL || `https://placehold.co/100x100.png?text=${(fbUser.displayName || "U").charAt(0).toUpperCase()}`,
+                    email: fbUser.email || undefined,
                 };
                 await setDoc(userDocRef, newUserPayload);
                 const newAppUser: User = { id: fbUser.uid, ...newUserPayload };
@@ -221,7 +223,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         } catch (e: any) {
             if(isMounted) handleFirestoreError(e, "Failed to load or create user profile.");
         }
-      } else if (!currentUser && fetchedUsers.length > 0) {
+      } else if (!currentUser && fetchedUsers.length > 0) { // Only if not set by auth and users are available
         const savedUserId = localStorage.getItem('currentUserId');
         let userToSet = null;
         if (savedUserId) {
@@ -235,7 +237,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           if(!localStorage.getItem('currentUserId')) localStorage.setItem('currentUserId', userToSet.id);
         }
       }
-      if(isMounted) setIsLoading(false); // Set loading to false after all operations
+      // isLoading should be false now due to fetchData's finally block
     };
   
     loadDataAndSetUser();
@@ -244,10 +246,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       isMounted = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firebaseUser]); // Run when firebaseUser changes (login/logout) or on initial mount. fetchData is stable.
+  }, [firebaseUser, fetchData]); // Re-run if firebaseUser changes (login/logout) or fetchData ref changes (rare)
 
 
-  const addUser = useCallback(async (name: string, avatarUrl?: string, firebaseUid?: string): Promise<User> => {
+  const addUser = useCallback(async (name: string, avatarUrl?: string, email?: string, firebaseUid?: string): Promise<User> => {
     setIsLoading(true);
     try {
       const userRef = firebaseUid ? doc(db, "users", firebaseUid) : doc(collection(db, "users"));
@@ -255,6 +257,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         name,
         avatarUrl: avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`,
       };
+      if (email) {
+        newUserPayload.email = email;
+      }
+
       await setDoc(userRef, newUserPayload);
       const newUser: User = { id: userRef.id, ...newUserPayload };
       
@@ -287,10 +293,10 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         date: serverTimestamp(),
       };
       
-      if (!payloadForFirestore.hasOwnProperty('category') || payloadForFirestore.category === undefined) {
+      if (!expenseData.hasOwnProperty('category') || expenseData.category === undefined) {
         delete payloadForFirestore.category;
       }
-      if (!payloadForFirestore.hasOwnProperty('eventId') || payloadForFirestore.eventId === undefined) {
+      if (!expenseData.hasOwnProperty('eventId') || expenseData.eventId === undefined) {
         delete payloadForFirestore.eventId;
       }
 
@@ -326,7 +332,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const expenseRef = doc(db, "expenses", expenseId);
-      const payloadForFirestore: { [key: string]: any } = { ...updatedData }; // Use a more general type for Firestore payload
+      const payloadForFirestore: { [key: string]: any } = { ...updatedData };
 
       if (updatedData.hasOwnProperty('category')) {
         payloadForFirestore.category = updatedData.category === undefined ? deleteField() : updatedData.category;
@@ -413,20 +419,52 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [toast]);
 
-  const updateUser = useCallback(async (userId: string, name: string, avatarUrl?: string) => {
+  const updateUser = useCallback(async (userId: string, name: string, avatarUrl?: string, email?: string) => {
     setIsLoading(true);
     try {
       const finalAvatarUrl = avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`;
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, { name, avatarUrl: finalAvatarUrl });
+      
+      const updatePayload: {name: string, avatarUrl: string, email?: string | typeof deleteField} = { 
+        name, 
+        avatarUrl: finalAvatarUrl 
+      };
+
+      if (email === undefined || email === '') { // Explicitly clear or undefined
+        updatePayload.email = deleteField();
+      } else if (email) { // Only set if email has a value
+        updatePayload.email = email;
+      }
+      // If email is not provided in args, existing email remains untouched unless it's an empty string
+
+      await updateDoc(userRef, updatePayload);
       
       setUsers(prevUsers => 
-        prevUsers.map(user => 
-          user.id === userId ? { ...user, name, avatarUrl: finalAvatarUrl } : user
-        ).sort((a, b) => a.name.localeCompare(b.name))
+        prevUsers.map(user => {
+          if (user.id === userId) {
+            const updatedUser = { ...user, name, avatarUrl: finalAvatarUrl };
+            if (email === undefined || email === '') {
+              delete updatedUser.email;
+            } else if (email) {
+              updatedUser.email = email;
+            }
+            return updatedUser;
+          }
+          return user;
+        }).sort((a, b) => a.name.localeCompare(b.name))
       );
+
       if (currentUser?.id === userId) {
-        setCurrentUser(prev => prev ? { ...prev, name, avatarUrl: finalAvatarUrl } : null);
+        setCurrentUser(prev => {
+          if (!prev) return null;
+          const updatedCurrentUser = { ...prev, name, avatarUrl: finalAvatarUrl };
+          if (email === undefined || email === '') {
+            delete updatedCurrentUser.email;
+          } else if (email) {
+            updatedCurrentUser.email = email;
+          }
+          return updatedCurrentUser;
+        });
       }
       toast({ title: "User Updated", description: "Profile details saved."});
     } catch (e: any) {
@@ -438,8 +476,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [currentUser, toast]);
 
   const setCurrentUserById = useCallback((userId: string | null) => {
-    // This function should only set the current user from the *already loaded* users list
-    // It should not trigger new data fetches.
     if (userId === null) {
       setCurrentUser(null);
       localStorage.removeItem('currentUserId');
@@ -452,7 +488,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
          localStorage.removeItem('currentUserId');
       }
     }
-  }, [users]); // Depends on the `users` list state
+  }, [users]);
 
   const addCategory = useCallback(async (categoryName: string): Promise<boolean> => {
     setIsLoading(true);
@@ -489,7 +525,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const currentCategoriesList = currentCategoriesSnap.exists() ? (currentCategoriesSnap.data()?.list as string[] || []).map(c=>c.toLowerCase()) : [];
 
       if (!trimmedNewName || (currentCategoriesList.includes(trimmedNewName.toLowerCase()) && trimmedNewName.toLowerCase() !== oldCategoryName.toLowerCase())) {
-        toast({ title: "Category Exists", description: `Category "${trimmedNewName}" may already exist or is empty.`, variant: "default" });
+        toast({ title: "Already Exists", description: `Category "${trimmedNewName}" may already exist or is empty.`, variant: "default" });
         setIsLoading(false);
         return false; 
       }
@@ -603,5 +639,3 @@ export function useAppData() {
   }
   return context;
 }
-    
-    

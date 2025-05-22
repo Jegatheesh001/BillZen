@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { WifiOff, Loader2 } from 'lucide-react';
+import { WifiOff, Loader2, Mail } from 'lucide-react'; // Added Mail icon
 
 export default function SettingsPage() {
   const { 
@@ -50,15 +50,23 @@ export default function SettingsPage() {
                 <p className="ml-2 text-muted-foreground">Loading users...</p>
               </div>
             ) : users.length > 0 ? (
-              <ScrollArea className="h-40">
-                <ul className="space-y-2">
+              <ScrollArea className="h-60"> {/* Increased height for email */}
+                <ul className="space-y-3"> {/* Increased space for email */}
                   {users.map(user => (
-                    <li key={user.id} className="flex items-center space-x-3 p-2 bg-secondary/30 rounded-md">
-                      <Avatar className="h-8 w-8">
+                    <li key={user.id} className="flex items-start space-x-3 p-3 bg-secondary/30 rounded-md"> {/* p-3 for more space */}
+                      <Avatar className="h-10 w-10 mt-0.5"> {/* Slightly larger avatar */}
                         <AvatarImage src={user.avatarUrl} alt={user.name} data-ai-hint="person portrait"/>
                         <AvatarFallback>{user.name.charAt(0)}</AvatarFallback>
                       </Avatar>
-                      <span>{user.name}</span>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{user.name}</span>
+                        {user.email && (
+                          <span className="text-xs text-muted-foreground flex items-center">
+                            <Mail className="h-3 w-3 mr-1" />
+                            {user.email}
+                          </span>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -77,6 +85,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-
-
-    
