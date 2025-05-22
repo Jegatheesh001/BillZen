@@ -3,7 +3,7 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
-import type { User, Expense, Event, EventFormData, Category } from '@/lib/types'; // Updated Category type
+import type { User, Expense, Event, EventFormData, Category } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { db, auth } from '@/lib/firebase'; 
 import {
@@ -21,8 +21,8 @@ import {
   where,
   Timestamp,
   serverTimestamp,
-  arrayUnion,
-  arrayRemove,
+  // arrayUnion, // Not used currently
+  // arrayRemove, // Not used currently
   deleteField,
   type FirestoreError,
 } from 'firebase/firestore';
@@ -35,7 +35,6 @@ const DEFAULT_USERS_DATA_SEED: Omit<User, 'id'>[] = [
   { name: 'Charlie', avatarUrl: 'https://placehold.co/100x100.png?text=C', email: 'charlie@example.com' },
 ];
 
-// Now categories are objects with id and name
 const INITIAL_CATEGORIES_DATA_SEED: Omit<Category, 'id'>[] = [
   { name: "Food" }, { name: "Transport" }, { name: "Shopping" }, { name: "Utilities" }, 
   { name: "Entertainment" }, { name: "Groceries" }, { name: "Travel" }, { name: "Health" }, 
@@ -47,7 +46,7 @@ interface AppDataContextState {
   users: User[];
   expenses: Expense[];
   events: Event[];
-  categories: Category[]; // Changed to Category[]
+  categories: Category[];
   currentUser: User | null;
   firebaseUser: FirebaseUser | null;
   isLoading: boolean;
@@ -61,7 +60,7 @@ interface AppDataContextState {
   updateEvent: (eventId: string, updatedData: Partial<EventFormData>) => Promise<void>;
   updateUser: (userId: string, name: string, avatarUrl?: string, email?: string) => Promise<void>;
   setCurrentUserById: (userId: string | null) => void;
-  addCategory: (categoryName: string) => Promise<Category | null>; // Returns Category or null
+  addCategory: (categoryName: string) => Promise<Category | null>;
   updateCategory: (categoryId: string, newCategoryName: string) => Promise<boolean>;
   removeCategory: (categoryId: string) => Promise<void>;
   addSettlement: (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }) => Promise<Expense | null>;
@@ -74,7 +73,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]); // Changed to Category[]
+  const [categories, setCategories] = useState<Category[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   
@@ -92,33 +91,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     console.error(defaultMessage, firestoreError);
   }, [toast]);
   
-  const fetchData = useCallback(async () => {
-    if (!db) {
-      setError("Firebase not initialized correctly.");
-      setIsLoading(false); 
-      return { fetchedUsers: [], initialLoadComplete: true, wasError: true };
-    }
-    
-    setIsLoading(true);
+  const fetchData = useCallback(async (currentFbUserForSeeding: FirebaseUser | null) => {
+    // setIsLoading(true); // Handled by calling effect
     setError(null);
     let fetchedUsersList: User[] = [];
+    let localSuccess = false;
 
     try {
       const usersCol = collection(db, "users");
       const expensesCol = collection(db, "expenses");
       const eventsCol = collection(db, "events");
-      const categoriesCol = collection(db, "categories"); // Categories are now a collection
+      const categoriesCol = collection(db, "categories");
 
       const [
         userSnapshot, 
         expenseSnapshot, 
         eventSnapshot, 
-        categoriesSnapshot // Fetch categories collection
+        categoriesSnapshot
       ] = await Promise.all([
         getDocs(query(usersCol, orderBy("name"))),
         getDocs(query(expensesCol, orderBy("date", "desc"))),
         getDocs(query(eventsCol, orderBy("name"))),
-        getDocs(query(categoriesCol, orderBy("name"))) // Order categories by name
+        getDocs(query(categoriesCol, orderBy("name")))
       ]);
 
       fetchedUsersList = userSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as User));
@@ -136,7 +130,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       
       let currentCategoriesList = categoriesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Category));
       
-      if (currentCategoriesList.length === 0) { // Seed categories if collection is empty
+      if (currentCategoriesList.length === 0) {
         const batch = writeBatch(db);
         const seededCategories: Category[] = [];
         INITIAL_CATEGORIES_DATA_SEED.forEach(catSeed => {
@@ -149,7 +143,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       }
       setCategories(currentCategoriesList);
       
-      if (fetchedUsersList.length === 0 && !auth.currentUser) { 
+      if (fetchedUsersList.length === 0 && !currentFbUserForSeeding) { 
           const batch = writeBatch(db);
           const seededUsers: User[] = [];
           DEFAULT_USERS_DATA_SEED.forEach(userSeed => {
@@ -164,92 +158,93 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setUsers(fetchedUsersList);
       setExpenses(expensesList);
       setEvents(eventsList);
-
-      return { fetchedUsers: fetchedUsersList, initialLoadComplete: true, wasError: false };
+      localSuccess = true;
     } catch (e: any) {
       handleFirestoreError(e, "Failed to load data from Firebase.");
-      return { fetchedUsers: [], initialLoadComplete: true, wasError: true };
-    } finally {
-      setIsLoading(false);
+      localSuccess = false;
     }
+    // Do not set isLoading(false) here, let the calling effect do it
+    return { fetchedUsers: fetchedUsersList, success: localSuccess };
   }, [handleFirestoreError, toast]); 
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setFirebaseUser(fbUser); 
-      if (fbUser) {
-        const userDocRef = doc(db, "users", fbUser.uid);
-        try {
-          const userDocSnap = await getDoc(userDocRef);
-          if (userDocSnap.exists()) {
-            const appUser = { id: userDocSnap.id, ...userDocSnap.data() } as User;
-            setCurrentUser(appUser);
-            localStorage.setItem('currentUserId', appUser.id);
-          } else {
-            // Create a new user profile in Firestore if it doesn't exist
-            const newUserPayload: Omit<User, 'id'> = {
-              name: fbUser.displayName || `User-${fbUser.uid.substring(0,5)}`,
-              avatarUrl: fbUser.photoURL || `https://placehold.co/100x100.png?text=${(fbUser.displayName || "U").charAt(0).toUpperCase()}`,
-              email: fbUser.email || undefined,
-            };
-            await setDoc(userDocRef, newUserPayload);
-            const newAppUser: User = { id: fbUser.uid, ...newUserPayload };
-            setCurrentUser(newAppUser);
-            localStorage.setItem('currentUserId', newAppUser.id);
-            // Ensure local users state is updated
-            setUsers(prev => {
-              const userExists = prev.some(u => u.id === newAppUser.id);
-              return userExists ? prev.map(u => u.id === newAppUser.id ? newAppUser : u).sort((a,b) => a.name.localeCompare(b.name)) 
-                                : [...prev, newAppUser].sort((a, b) => a.name.localeCompare(b.name));
-            });
-          }
-        } catch (e: any) {
-          handleFirestoreError(e, "Failed to load or create user profile after auth change.");
-        }
-      } else {
-        setCurrentUser(null); 
-        localStorage.removeItem('currentUserId');
-      }
-    });
-    return () => unsubscribe();
-  }, [handleFirestoreError]); 
+    setIsLoading(true); // Set loading true at the very start of this effect.
 
-  useEffect(() => {
-    let isMounted = true;
-    const loadDataAndSetUser = async () => {
-      const { fetchedUsers, initialLoadComplete, wasError } = await fetchData();
-  
-      if (!isMounted || !initialLoadComplete || wasError) {
-        if (isMounted && wasError && !isLoading) setIsLoading(false); // Ensure loading is false if error occurred
-        return;
-      }
-  
-      if (!firebaseUser && !currentUser && fetchedUsers.length > 0) {
-        const savedUserId = localStorage.getItem('currentUserId');
-        let userToSet = null;
-        if (savedUserId) {
-          userToSet = fetchedUsers.find(u => u.id === savedUserId);
+    const authUnsubscribe = onAuthStateChanged(auth, async (currentAuthUser) => {
+        setFirebaseUser(currentAuthUser); // Update Firebase user state
+
+        // Fetch all application data, passing currentAuthUser for seeding logic.
+        const { fetchedUsers, success: dataFetchSuccess } = await fetchData(currentAuthUser);
+
+        if (!dataFetchSuccess) {
+            setCurrentUser(null);
+            localStorage.removeItem('currentUserId');
+            setIsLoading(false); // Critical: Stop loading on fetch error.
+            return; // Stop further processing.
         }
-        if (!userToSet && fetchedUsers.length > 0) { 
-          userToSet = fetchedUsers[0]; // Default to the first user if no saved one or saved one not found
+
+        let finalUserToSet: User | null = null;
+
+        if (currentAuthUser) {
+            // Firebase user exists, try to find/create their app profile.
+            const userDocRef = doc(db, "users", currentAuthUser.uid);
+            try {
+                const userDocSnap = await getDoc(userDocRef);
+                if (userDocSnap.exists()) {
+                    finalUserToSet = { id: userDocSnap.id, ...userDocSnap.data() } as User;
+                } else {
+                    // Create a new user profile in Firestore if it doesn't exist.
+                    const newUserPayload: Omit<User, 'id'> = {
+                        name: currentAuthUser.displayName || `User-${currentAuthUser.uid.substring(0,5)}`,
+                        avatarUrl: currentAuthUser.photoURL || `https://placehold.co/100x100.png?text=${(currentAuthUser.displayName || "U").charAt(0).toUpperCase()}`,
+                        email: currentAuthUser.email || undefined,
+                    };
+                    await setDoc(userDocRef, newUserPayload);
+                    finalUserToSet = { id: currentAuthUser.uid, ...newUserPayload };
+                    // Ensure local users state (used for default selection) is updated.
+                    // This is important if fetchData ran *before* this new user was created.
+                    setUsers(prevUsers => {
+                        const userExists = prevUsers.some(u => u.id === finalUserToSet!.id);
+                        return userExists ? prevUsers.map(u => u.id === finalUserToSet!.id ? finalUserToSet! : u).sort((a,b) => a.name.localeCompare(b.name))
+                                          : [...prevUsers, finalUserToSet!].sort((a, b) => a.name.localeCompare(b.name));
+                    });
+                }
+            } catch (e) {
+                 handleFirestoreError(e, "Failed to load or create user profile for authenticated user.");
+                 finalUserToSet = null; // Ensure user is null on error
+            }
+        } else {
+            // No Firebase user, try localStorage or default from the users list fetched by fetchData.
+            const savedUserId = localStorage.getItem('currentUserId');
+            if (savedUserId) {
+                finalUserToSet = fetchedUsers.find(u => u.id === savedUserId) || null;
+            }
+            if (!finalUserToSet && fetchedUsers.length > 0) {
+                finalUserToSet = fetchedUsers[0]; // Default to the first user
+            }
         }
-        if (userToSet && isMounted) {
-          setCurrentUser(userToSet);
-          if(!localStorage.getItem('currentUserId')) localStorage.setItem('currentUserId', userToSet.id);
+        
+        setCurrentUser(finalUserToSet); // Set the current user state *once*
+        if (finalUserToSet) {
+            localStorage.setItem('currentUserId', finalUserToSet.id);
+        } else {
+            localStorage.removeItem('currentUserId');
         }
-      }
-    };
-  
-    loadDataAndSetUser();
-  
+        
+        setIsLoading(false); // Set loading false after all data is fetched and user is determined.
+    });
+
     return () => {
-      isMounted = false;
+        authUnsubscribe(); // Cleanup the auth listener on component unmount.
     };
-  }, [firebaseUser, fetchData, currentUser, isLoading]); // Added currentUser, isLoading to deps
+    // This effect should ideally run once to set up the listener.
+    // fetchData and handleFirestoreError are stable due to useCallback.
+}, [fetchData, handleFirestoreError]);
 
 
   const addUser = useCallback(async (name: string, avatarUrl?: string, email?: string, firebaseUid?: string): Promise<User> => {
-    setIsLoading(true);
+    // Global isLoading is handled by the main data loading effect now.
+    // This function can proceed assuming global isLoading covers Firestore operations.
     try {
       const userRef = firebaseUid ? doc(db, "users", firebaseUid) : doc(collection(db, "users"));
       const newUserPayload: Omit<User, 'id'> = {
@@ -269,8 +264,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         return [...prev, newUser].sort((a,b) => a.name.localeCompare(b.name));
       });
 
-      if (users.length === 0 && !currentUser && !auth.currentUser) {
-          setCurrentUser(newUser);
+      if (users.length === 0 && !currentUser && !auth.currentUser) { // users refers to old state here
+          setCurrentUser(newUser); // This might be an issue if it conflicts with main effect
           localStorage.setItem('currentUserId', newUser.id);
       }
       toast({ title: "User Added", description: `${newUser.name} added successfully.`});
@@ -278,14 +273,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to add user.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
-  }, [toast, users, currentUser, handleFirestoreError]);
+  }, [toast, users, currentUser, handleFirestoreError]); // users, currentUser dependencies could make this function unstable.
 
 
   const addExpense = useCallback(async (expenseData: Omit<Expense, 'id' | 'date'>): Promise<Expense | null> => {
-    setIsLoading(true);
+    setError(null);
     try {
       const payloadForFirestore: any = {
         ...expenseData,
@@ -294,21 +287,25 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       
       if (!expenseData.hasOwnProperty('category') || expenseData.category === undefined) {
         delete payloadForFirestore.category;
+      } else {
+        payloadForFirestore.category = expenseData.category;
       }
+
       if (!expenseData.hasOwnProperty('eventId') || expenseData.eventId === undefined) {
         delete payloadForFirestore.eventId;
+      } else {
+         payloadForFirestore.eventId = expenseData.eventId;
       }
 
       const docRef = await addDoc(collection(db, "expenses"), payloadForFirestore);
       
-      // Construct the newExpense object carefully
       const newExpense: Expense = {
         id: docRef.id,
         description: expenseData.description,
         amount: expenseData.amount,
         paidById: expenseData.paidById,
         participantIds: expenseData.participantIds,
-        date: new Date().toISOString(), // Use current date for local state until proper fetch
+        date: new Date().toISOString(), 
       };
       if (expenseData.category !== undefined) {
         newExpense.category = expenseData.category;
@@ -323,13 +320,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to add expense.");
       return null;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const updateExpense = useCallback(async (expenseId: string, updatedData: Partial<Omit<Expense, 'id' | 'date'>>) => {
-    setIsLoading(true);
+    setError(null);
     try {
       const expenseRef = doc(db, "expenses", expenseId);
       const payloadForFirestore: { [key: string]: any } = { ...updatedData };
@@ -362,13 +357,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update expense.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
   
   const deleteExpense = useCallback(async (expenseId: string): Promise<void> => {
-    setIsLoading(true);
+    setError(null);
     try {
       const expenseRef = doc(db, "expenses", expenseId);
       await deleteDoc(expenseRef);
@@ -377,13 +370,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to delete expense.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const clearAllExpenses = useCallback(async (): Promise<void> => {
-    setIsLoading(true);
+    setIsLoading(true); // Specific loading for this action
+    setError(null);
     try {
       const expensesCol = collection(db, "expenses");
       const expenseSnapshot = await getDocs(expensesCol);
@@ -411,7 +403,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [toast, handleFirestoreError]);
 
   const addEvent = useCallback(async (eventData: EventFormData): Promise<Event | null> => {
-    setIsLoading(true);
+    setError(null);
     try {
       const docRef = await addDoc(collection(db, "events"), eventData);
       const newEvent: Event = { ...eventData, id: docRef.id };
@@ -421,13 +413,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to add event.");
       return null;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const updateEvent = useCallback(async (eventId: string, updatedData: Partial<EventFormData>) => {
-    setIsLoading(true);
+    setError(null);
     try {
       const eventRef = doc(db, "events", eventId);
       await updateDoc(eventRef, updatedData);
@@ -442,13 +432,11 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update event.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const updateUser = useCallback(async (userId: string, name: string, avatarUrl?: string, email?: string) => {
-    setIsLoading(true);
+    setError(null);
     try {
       const finalAvatarUrl = avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`;
       const userRef = doc(db, "users", userId);
@@ -466,39 +454,29 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       await updateDoc(userRef, updatePayload);
       
+      const updatedUserInList = (prevUser: User) => {
+        const updatedUser = { ...prevUser, name, avatarUrl: finalAvatarUrl };
+        if (email === undefined || email === '') {
+          delete updatedUser.email;
+        } else if (email) {
+          updatedUser.email = email;
+        }
+        return updatedUser;
+      };
+
       setUsers(prevUsers => 
-        prevUsers.map(user => {
-          if (user.id === userId) {
-            const updatedUser = { ...user, name, avatarUrl: finalAvatarUrl };
-            if (email === undefined || email === '') {
-              delete updatedUser.email;
-            } else if (email) {
-              updatedUser.email = email;
-            }
-            return updatedUser;
-          }
-          return user;
-        }).sort((a, b) => a.name.localeCompare(b.name))
+        prevUsers.map(user => 
+          user.id === userId ? updatedUserInList(user) : user
+        ).sort((a, b) => a.name.localeCompare(b.name))
       );
 
       if (currentUser?.id === userId) {
-        setCurrentUser(prev => {
-          if (!prev) return null;
-          const updatedCurrentUser = { ...prev, name, avatarUrl: finalAvatarUrl };
-          if (email === undefined || email === '') {
-            delete updatedCurrentUser.email;
-          } else if (email) {
-            updatedCurrentUser.email = email;
-          }
-          return updatedCurrentUser;
-        });
+        setCurrentUser(prev => prev ? updatedUserInList(prev) : null);
       }
       toast({ title: "User Updated", description: "Profile details saved."});
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update user.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [currentUser, toast, handleFirestoreError]);
 
@@ -518,21 +496,17 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [users]);
 
   const addCategory = useCallback(async (categoryName: string): Promise<Category | null> => {
-    setIsLoading(true);
+    setError(null);
     try {
       const trimmedName = categoryName.trim();
       const categoriesCol = collection(db, "categories");
       
-      // Check for existing category by name (case-insensitive)
-      const existingCategoryQuery = query(categoriesCol, where("name", "==", trimmedName)); // Firestore queries are case-sensitive by default
-      const existingCategorySnap = await getDocs(existingCategoryQuery);
-      // Double check case-insensitively
-      const trulyExisting = existingCategorySnap.docs.find(doc => doc.data().name.toLowerCase() === trimmedName.toLowerCase());
-
+      const q = query(categoriesCol, where("name", "==", trimmedName));
+      const existingCategorySnap = await getDocs(q);
+      const trulyExisting = existingCategorySnap.docs.find(docSnap => docSnap.data().name.toLowerCase() === trimmedName.toLowerCase());
 
       if (!trimmedName || trulyExisting) {
         toast({ title: "Category Exists", description: `Category "${trimmedName}" already exists or is empty.`, variant: "default" });
-        setIsLoading(false);
         return null; 
       }
       
@@ -546,33 +520,27 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to add category.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const updateCategory = useCallback(async (categoryId: string, newCategoryName: string): Promise<boolean> => {
-    setIsLoading(true);
+    setError(null);
     try {
       const trimmedNewName = newCategoryName.trim();
       const categoryRef = doc(db, "categories", categoryId);
       const oldCategorySnap = await getDoc(categoryRef);
       if (!oldCategorySnap.exists()) {
         toast({ title: "Not Found", description: `Category to update not found.`, variant: "destructive" });
-        setIsLoading(false);
         return false;
       }
       const oldCategoryName = oldCategorySnap.data()?.name;
 
-      // Check if new name already exists (excluding the current category itself)
-      const existingCategoryQuery = query(collection(db, "categories"), where("name", "==", trimmedNewName));
-      const existingCategorySnap = await getDocs(existingCategoryQuery);
+      const q = query(collection(db, "categories"), where("name", "==", trimmedNewName));
+      const existingCategorySnap = await getDocs(q);
       const conflict = existingCategorySnap.docs.some(docSnap => docSnap.id !== categoryId && docSnap.data().name.toLowerCase() === trimmedNewName.toLowerCase());
-
 
       if (!trimmedNewName || conflict) {
          toast({ title: "Already Exists", description: `Category name "${trimmedNewName}" is empty or already used by another category.`, variant: "destructive" });
-        setIsLoading(false);
         return false; 
       }
       
@@ -597,19 +565,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update category.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
   const removeCategory = useCallback(async (categoryId: string) => {
-    setIsLoading(true);
+    setError(null);
     try {
       const categoryRef = doc(db, "categories", categoryId);
       const categorySnap = await getDoc(categoryRef);
       if (!categorySnap.exists()) {
          toast({ title: "Not Found", description: `Category to delete not found.`, variant: "destructive" });
-         setIsLoading(false);
          return;
       }
       const categoryName = categorySnap.data()?.name;
@@ -637,8 +602,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     } catch (e: any) {
       handleFirestoreError(e, "Failed to remove category.");
       throw e;
-    } finally {
-      setIsLoading(false);
     }
   }, [toast, handleFirestoreError]);
 
@@ -650,6 +613,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       participantIds: [details.recipientId],
       category: "Settlement", 
     };
+    // Note: addExpense is already memoized and handles its own error/toast
     return addExpense(settlementExpenseData);
   }, [addExpense]);
 
@@ -680,7 +644,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     users, expenses, events, categories, currentUser, firebaseUser, isLoading, error, 
     addUser, addExpense, updateExpense, deleteExpense, clearAllExpenses, 
     addEvent, updateEvent, updateUser, setCurrentUserById, 
-    addCategory, updateCategory, removeCategory, addSettlement, handleFirestoreError // Added handleFirestoreError
+    addCategory, updateCategory, removeCategory, addSettlement, handleFirestoreError
   ]);
 
   return (
