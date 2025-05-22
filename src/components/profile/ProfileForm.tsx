@@ -21,7 +21,7 @@ import {
 import { useAppData } from '@/context/AppDataContext';
 import { useToast } from '@/hooks/use-toast';
 import { Camera, Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
 
 const profileFormSchema = z.object({
   name: z.string().min(1, "Name is required."),
@@ -34,9 +34,8 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
 export function ProfileForm() {
   const { currentUser, updateUser, setCurrentUserById, users, isLoading: isAppLoading } = useAppData();
   const { toast } = useToast();
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(currentUser?.id || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -54,19 +53,21 @@ export function ProfileForm() {
         avatarUrl: currentUser.avatarUrl,
         email: currentUser.email || '',
       });
-      setSelectedUserId(currentUser.id);
-    } else if (users.length > 0 && !currentUser) {
-      setCurrentUserById(users[0].id);
-      setSelectedUserId(users[0].id);
+    } else {
+      // If currentUser becomes null (e.g., after being set and then unset, or initially),
+      // reset form to default empty values.
+      form.reset({
+        name: '',
+        avatarUrl: '',
+        email: '',
+      });
     }
-  }, [currentUser, form, users, setCurrentUserById]);
+  }, [currentUser, form]);
   
   const handleUserChange = (userId: string) => {
-    setCurrentUserById(userId);
-    setSelectedUserId(userId);
+    setCurrentUserById(userId); // AppDataContext will update currentUser
     router.push('/expenses'); 
   };
-
 
   async function onSubmit(data: ProfileFormValues) {
     if (!currentUser) {
@@ -85,7 +86,23 @@ export function ProfileForm() {
     }
   }
 
-  if (!currentUser && users.length === 0 && !isAppLoading) {
+  // State 1: App is loading critical data and no current user is yet identified
+  if (isAppLoading && !currentUser) {
+    return (
+        <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
+            <CardHeader className="items-center text-center">
+                <CardTitle>Profile</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center justify-center h-40">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="mt-2 text-muted-foreground">Loading profile...</p>
+            </CardContent>
+        </Card>
+    );
+  }
+  
+  // State 2: App has finished loading, but no users exist in the system at all
+  if (!isAppLoading && users.length === 0 && !currentUser) {
     return (
       <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
         <CardHeader>
@@ -98,21 +115,8 @@ export function ProfileForm() {
     );
   }
   
-  if (isAppLoading && !currentUser) {
-    return (
-        <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
-            <CardHeader className="items-center text-center">
-                <CardTitle>Profile</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center h-40">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="mt-2 text-muted-foreground">Loading profile...</p>
-            </CardContent>
-        </Card>
-    )
-  }
-  
-  if (!currentUser && users.length > 0 && !selectedUserId && !isAppLoading) {
+  // State 3: App has finished loading, users exist, but no currentUser is active. Prompt user to select.
+  if (!isAppLoading && users.length > 0 && !currentUser) {
      return (
         <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
           <CardHeader>
@@ -131,30 +135,41 @@ export function ProfileForm() {
              ))}
           </CardContent>
         </Card>
-     )
+     );
   }
 
-  const formDisabled = isSubmitting || isAppLoading;
+  // If we reach here, currentUser should be available and isAppLoading should be false.
+  if (!currentUser) {
+    // This is a fallback/error state, ideally should not be reached if above conditions are correct.
+    return (
+      <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
+        <CardHeader><CardTitle>Error</CardTitle></CardHeader>
+        <CardContent><p>Could not load profile. Please try again or select a profile.</p></CardContent>
+      </Card>
+    );
+  }
+
+  const formDisabled = isSubmitting || isAppLoading; // isAppLoading check for general app state changes
 
   return (
     <Card className="w-full max-w-md mx-auto shadow-xl rounded-xl">
       <CardHeader className="items-center text-center">
          <div className="relative group mb-4">
-          <Avatar className="w-24 h-24 text-4xl border-4 border-primary/50 shadow-md">
-            <AvatarImage src={form.watch('avatarUrl') || currentUser?.avatarUrl} alt={currentUser?.name} data-ai-hint="person portrait"/>
-            <AvatarFallback>{currentUser?.name.charAt(0).toUpperCase() || 'U'}</AvatarFallback>
+          <Avatar key={currentUser.id + '-' + currentUser.avatarUrl} className="w-24 h-24 text-4xl border-4 border-primary/50 shadow-md">
+            <AvatarImage src={form.watch('avatarUrl') || currentUser.avatarUrl} alt={currentUser.name} data-ai-hint="person portrait"/>
+            <AvatarFallback>{currentUser.name.charAt(0).toUpperCase()}</AvatarFallback>
           </Avatar>
            <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
              onClick={() => { 
-                 const newUrl = prompt("Enter new avatar URL:", form.getValues('avatarUrl') || currentUser?.avatarUrl || "");
+                 const newUrl = prompt("Enter new avatar URL:", form.getValues('avatarUrl') || currentUser.avatarUrl || "");
                  if (newUrl !== null) { 
-                    form.setValue('avatarUrl', newUrl);
+                    form.setValue('avatarUrl', newUrl, { shouldValidate: true, shouldDirty: true });
                  }
               }}>
             <Camera className="h-8 w-8 text-white" />
           </div>
         </div>
-        <CardTitle className="text-2xl">{currentUser?.name || 'User Profile'}</CardTitle>
+        <CardTitle className="text-2xl">{currentUser.name}</CardTitle>
         <CardDescription>Manage your personal information. Data is stored in Firebase.</CardDescription>
       </CardHeader>
       <CardContent>
@@ -180,7 +195,7 @@ export function ProfileForm() {
                 <FormItem>
                   <FormLabel>Avatar URL (Optional)</FormLabel>
                   <FormControl>
-                    <Input placeholder="https://example.com/avatar.png" {...field} disabled={formDisabled} />
+                    <Input placeholder="https://placehold.co/100x100.png" {...field} disabled={formDisabled} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -209,13 +224,13 @@ export function ProfileForm() {
           <div className="mt-8">
             <Label>Switch Profile:</Label>
             <div className="space-y-2 mt-2">
-            {users.filter(u => u.id !== currentUser?.id).map(user => (
+            {users.filter(u => u.id !== currentUser.id).map(user => (
               <Button 
                 key={user.id} 
                 variant="outline" 
                 className="w-full justify-start" 
                 onClick={() => handleUserChange(user.id)}
-                disabled={isAppLoading}
+                disabled={isAppLoading} // Disable if app is generally loading
               >
                   <Avatar className="h-6 w-6 mr-2">
                     <AvatarImage src={user.avatarUrl} data-ai-hint="person portrait"/>
@@ -231,3 +246,5 @@ export function ProfileForm() {
     </Card>
   );
 }
+
+    
