@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import type { Category } from '@/lib/types'; // Ensure Category type is imported
 import { useAppData } from '@/context/AppDataContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,9 +39,14 @@ export function ManageCategories() {
   const { toast } = useToast();
 
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [categoryToEdit, setCategoryToEdit] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null); // Changed to Category | null
   const [editedCategoryName, setEditedCategoryName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // State for confirmation dialog for category removal
+  const [categoryToRemove, setCategoryToRemove] = useState<Category | null>(null);
+  const [isRemoveAlertOpen, setIsRemoveAlertOpen] = useState(false);
+
 
   const handleAddCategory = async () => {
     if (!newCategory.trim()) {
@@ -49,12 +55,12 @@ export function ManageCategories() {
     }
     setIsSubmitting(true);
     try {
-      const success = await addCategory(newCategory);
-      if (success) {
-        toast({ title: "Category Added", description: `"${newCategory}" has been added.` });
+      const createdCategory = await addCategory(newCategory); // addCategory now returns Category | null
+      if (createdCategory) {
+        toast({ title: "Category Added", description: `"${createdCategory.name}" has been added.` });
         setNewCategory('');
       } else {
-        toast({ title: "Already Exists", description: `Category "${newCategory}" may already exist.`, variant: "destructive" });
+        // Error toast for existing category is handled by addCategory itself now.
       }
     } catch (error: any) {
        toast({ title: "Error Adding Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
@@ -63,47 +69,57 @@ export function ManageCategories() {
     }
   };
 
-  const handleEditClick = (category: string) => {
-    setCategoryToEdit(category);
-    setEditedCategoryName(category);
+  const handleEditClick = (category: Category) => { // Accepts Category object
+    setEditingCategory(category);
+    setEditedCategoryName(category.name);
     setIsEditDialogOpen(true);
   };
 
   const handleSaveEdit = async () => {
-    if (!categoryToEdit || !editedCategoryName.trim()) {
+    if (!editingCategory || !editedCategoryName.trim()) {
       toast({ title: "Error", description: "Category name cannot be empty.", variant: "destructive" });
       return;
     }
-    if (editedCategoryName.trim().toLowerCase() === categoryToEdit.toLowerCase()) {
+    if (editedCategoryName.trim().toLowerCase() === editingCategory.name.toLowerCase()) {
        setIsEditDialogOpen(false); 
        return;
     }
     setIsSubmitting(true);
     try {
-      const success = await updateCategory(categoryToEdit, editedCategoryName);
+      // updateCategory expects (categoryId: string, newCategoryName: string)
+      const success = await updateCategory(editingCategory.id, editedCategoryName);
       if (success) {
-        toast({ title: "Category Updated", description: `"${categoryToEdit}" updated to "${editedCategoryName}".` });
+        toast({ title: "Category Updated", description: `"${editingCategory.name}" updated to "${editedCategoryName}".` });
       } else {
-         toast({ title: "Already Exists", description: `Category "${editedCategoryName}" may already exist.`, variant: "destructive" });
+         // Error toast for existing category handled by updateCategory
       }
     } catch (error: any) {
        toast({ title: "Error Updating Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
       setIsEditDialogOpen(false);
-      setCategoryToEdit(null);
+      setEditingCategory(null);
     }
   };
 
-  const handleRemoveCategory = async (categoryName: string) => {
+  const confirmRemoveCategory = (category: Category) => {
+    setCategoryToRemove(category);
+    setIsRemoveAlertOpen(true);
+  };
+
+  const executeRemoveCategory = async () => {
+    if (!categoryToRemove) return;
     setIsSubmitting(true);
     try {
-      await removeCategory(categoryName);
-      toast({ title: "Category Removed", description: `"${categoryName}" has been removed.` });
+      // removeCategory expects (categoryId: string)
+      await removeCategory(categoryToRemove.id);
+      toast({ title: "Category Removed", description: `"${categoryToRemove.name}" has been removed.` });
     } catch (error: any) {
        toast({ title: "Error Removing Category", description: error.message || "An unexpected error occurred.", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
+      setIsRemoveAlertOpen(false);
+      setCategoryToRemove(null);
     }
   };
   
@@ -137,7 +153,7 @@ export function ManageCategories() {
             title="Add new category"
             disabled={formDisabled}
           >
-            {isSubmitting ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
+            {isSubmitting && !isAppLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlusCircle className="h-5 w-5" />}
           </Button>
         </div>
 
@@ -151,44 +167,27 @@ export function ManageCategories() {
           ) : categories.length > 0 ? (
             <ScrollArea className="h-60 border rounded-md">
               <ul className="p-2">
-                {categories.map((category) => (
+                {categories.map((category) => ( // category is now {id: string, name: string}
                   <li
-                    key={category}
+                    key={category.id} // Use category.id as the key
                     className="flex items-center justify-between p-2 hover:bg-muted/50 rounded-md group"
                   >
-                    <span>{category}</span>
+                    <span>{category.name}</span> {/* Display category.name */}
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEditClick(category)} disabled={formDisabled}>
                         <Edit3 className="h-4 w-4" />
-                         <span className="sr-only">Edit {category}</span>
+                         <span className="sr-only">Edit {category.name}</span>
                       </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" disabled={formDisabled}>
-                            <Trash2 className="h-4 w-4" />
-                            <span className="sr-only">Remove {category}</span>
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This action will remove the category "{category}". Expenses using this category will have it cleared (client-side, backend update for expenses may be needed).
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel disabled={isSubmitting}>Cancel</AlertDialogCancel>
-                            <AlertDialogAction 
-                              onClick={() => handleRemoveCategory(category)} 
-                              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                              disabled={isSubmitting || isAppLoading}
-                            >
-                              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                              Remove
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="h-7 w-7 text-destructive hover:text-destructive" 
+                        onClick={() => confirmRemoveCategory(category)} // Pass category object
+                        disabled={formDisabled}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        <span className="sr-only">Remove {category.name}</span>
+                      </Button>
                     </div>
                   </li>
                 ))}
@@ -202,12 +201,13 @@ export function ManageCategories() {
         </div>
       </CardContent>
 
+      {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={(open) => { if (!formDisabled) setIsEditDialogOpen(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Category</DialogTitle>
             <DialogDescription>
-              Change the name of the category "{categoryToEdit}".
+              Change the name of the category "{editingCategory?.name}". {/* Use editingCategory.name */}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -222,17 +222,41 @@ export function ManageCategories() {
           </div>
           <DialogFooter>
             <DialogClose asChild>
-              <Button variant="outline" onClick={() => { if (!formDisabled) setCategoryToEdit(null);}} disabled={isSubmitting || isAppLoading}>
+              <Button variant="outline" onClick={() => { if (!formDisabled) setEditingCategory(null);}} disabled={isSubmitting || isAppLoading}>
                 <XCircle className="mr-2 h-4 w-4" /> Cancel
               </Button>
             </DialogClose>
             <Button onClick={handleSaveEdit} disabled={isSubmitting || isAppLoading}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {(isSubmitting && !isAppLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle className="mr-2 h-4 w-4" /> Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Remove Confirmation Alert Dialog */}
+      <AlertDialog open={isRemoveAlertOpen} onOpenChange={setIsRemoveAlertOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action will remove the category "{categoryToRemove?.name}". 
+              Expenses using this category will have it cleared. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting || isAppLoading} onClick={() => setCategoryToRemove(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={executeRemoveCategory} 
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              disabled={isSubmitting || isAppLoading}
+            >
+              {(isSubmitting && !isAppLoading) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
