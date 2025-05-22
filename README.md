@@ -6,24 +6,25 @@ BillZen is a modern web application designed to simplify expense sharing and tra
 ## Key Features
 
 *   **User Management (Firebase):**
-    *   Add multiple users to the system via the Settings page.
+    *   Add multiple users to the system via the Settings page (name, avatar URL, optional email).
     *   Assign names and avatar URLs (defaults to placeholder avatars).
     *   Switch between user profiles from the Profile page to view the app from different perspectives. After switching, the app navigates to the Dashboard.
     *   The currently active user preference is stored locally.
 *   **Expense Tracking (Firebase):**
     *   Add new expenses with descriptions, amounts, dates, payer, and participants.
-    *   Assign expenses to an optional event (automatically selecting event members as participants).
+    *   Assign expenses to an optional event (selecting an event automatically suggests its members as participants).
     *   Assign an optional category to expenses.
     *   Edit existing expenses.
     *   Delete expenses (only the user who paid for the expense can delete it, with a confirmation prompt).
 *   **Event Management (Firebase):**
     *   Create events (e.g., "Road Trip", "Dinner Party") to group related expenses via the Events page.
     *   Assign specific members to events.
-    *   Edit event details, including name and member lists.
+    *   Edit event details (name and member list).
+    *   View expenses related to a specific event by clicking on the expense count on an event card.
 *   **Dynamic Balance Summary (Dashboard Page):**
     *   View a clear summary of who owes whom, dynamically updated based on the currently selected user profile.
-    *   Shows amounts owed to the current user or by the current user.
-    *   The selected user's "Overall Balance" with the group is displayed prominently.
+    *   Shows amounts owed to the current user or by the current user from other group members.
+    *   The selected user's "Overall Balance" with the group is displayed prominently and highlighted.
 *   **Payment Settlement (Dashboard Page):**
     *   Record payments made between users to settle outstanding debts.
     *   The "Settle" option appears when the current user owes another user.
@@ -37,17 +38,19 @@ BillZen is a modern web application designed to simplify expense sharing and tra
     *   Remove categories (clears the category from associated expenses).
 *   **Profile Switching & Editing (Profile Page, Firebase for user data):**
     *   Easily switch the active user profile.
-    *   Update the name and avatar URL for the selected user profile.
+    *   Update the name, avatar URL, and optional email for the selected user profile.
 *   **Theme Customization:**
     *   Switch between light and dark mode themes using a toggle in the header.
     *   Theme preference is saved in local storage.
 *   **Navigation & Layout:**
     *   **Dashboard:** Displays recent expenses (limited to 5 for the current user, with search) and the dynamic Balance Summary.
-    *   **My Expenses:** Lists all expenses specifically related to the currently selected user (where they are the payer or a participant), with a search option.
+    *   **My Expenses:** Lists all expenses specifically related to the currently selected user (where they are the payer or a participant), with a search option. Can be filtered by event.
     *   **Events:** Page to view and manage all events.
     *   **Profile:** Page to edit the current user's profile and switch between available user profiles.
-    *   **Settings:** Page to add new users and manage expense categories.
+    *   **Settings:** Page to add new users, manage expense categories, and clear all expenses (with confirmation).
     *   Responsive design with a bottom navigation bar for easy access on mobile devices.
+*   **Data Management (Settings Page, Firebase):**
+    *   Option to "Clear All Expenses" with a confirmation dialog.
 *   **Responsive Design:**
     *   User-friendly interface optimized for both desktop and mobile devices.
 
