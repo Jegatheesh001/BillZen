@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Users, Receipt, Pencil } from 'lucide-react';
+import Link from 'next/link'; // Added Link
 
 interface EventCardProps {
   event: EventType;
@@ -52,15 +53,19 @@ export function EventCard({ event, users, expenses, onEdit }: EventCardProps) {
             {members.length > 5 && <Badge variant="secondary">+{members.length - 5} more</Badge>}
           </div>
         </div>
-        <div className="flex items-center">
-          <Receipt className="h-4 w-4 mr-2 text-primary" />
-          <span>{eventExpensesCount} expense{eventExpensesCount === 1 ? '' : 's'}</span>
-          {totalEventSpend > 0 && (
-             <span className="ml-auto text-xs font-semibold text-muted-foreground">
-              Total: ${totalEventSpend.toFixed(2)}
+        <Link href={`/my-expenses?eventId=${event.id}`} passHref legacyBehavior>
+          <a className="flex items-center hover:underline cursor-pointer group">
+            <Receipt className="h-4 w-4 mr-2 text-primary group-hover:text-accent" />
+            <span className="group-hover:text-accent">
+              {eventExpensesCount} expense{eventExpensesCount === 1 ? '' : 's'}
             </span>
-          )}
-        </div>
+            {totalEventSpend > 0 && (
+              <span className="ml-auto text-xs font-semibold text-muted-foreground group-hover:text-accent/80">
+                Total: ${totalEventSpend.toFixed(2)}
+              </span>
+            )}
+          </a>
+        </Link>
       </CardContent>
     </Card>
   );

@@ -53,13 +53,14 @@ interface AddExpenseSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   expenseToEdit?: Expense | null;
+  defaultEventId?: string | null; // Added prop
 }
 
 const DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE = "_dummy_empty_custom_category_";
 const NO_CATEGORY_VALUE = "_no_category_";
 const NO_EVENT_VALUE = "_no_event_";
 
-export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpenseSheetProps) {
+export function AddExpenseSheet({ open, onOpenChange, expenseToEdit, defaultEventId }: AddExpenseSheetProps) {
   const { 
     users, 
     events, 
@@ -80,7 +81,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       description: '',
       amount: 0,
       paidById: currentUser?.id || users[0]?.id || '',
-      eventId: NO_EVENT_VALUE,
+      eventId: defaultEventId || NO_EVENT_VALUE, // Use defaultEventId here
       participantIds: users.map(u => u.id),
       category: NO_CATEGORY_VALUE,
     },
@@ -100,17 +101,27 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       });
       setCustomCategoryInput(''); 
     } else if (open && !expenseToEdit) { 
+      // For new expenses, prioritize defaultEventId if provided
+      const initialEventId = defaultEventId || NO_EVENT_VALUE;
+      let initialParticipants = users.map(u => u.id);
+      if (initialEventId && initialEventId !== NO_EVENT_VALUE) {
+        const event = events.find(e => e.id === initialEventId);
+        if (event) {
+          initialParticipants = event.memberIds;
+        }
+      }
+
       form.reset({
         description: '',
         amount: 0,
         paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
-        eventId: NO_EVENT_VALUE,
-        participantIds: users.map(u => u.id),
+        eventId: initialEventId,
+        participantIds: initialParticipants,
         category: NO_CATEGORY_VALUE,
       });
       setCustomCategoryInput('');
     }
-  }, [open, expenseToEdit, form, users, currentUser]);
+  }, [open, expenseToEdit, form, users, currentUser, defaultEventId, events]); // Added defaultEventId and events
 
   useEffect(() => {
     if (selectedEventId && selectedEventId !== NO_EVENT_VALUE) {
@@ -120,10 +131,12 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
       }
     } else if (selectedEventId === NO_EVENT_VALUE) {
       // If "No Event" is selected, reset participants to all users
-      form.setValue('participantIds', users.map(u => u.id), { shouldValidate: true });
+      // unless it's an edit operation, in which case we leave participants as they were loaded
+      if (!expenseToEdit) {
+         form.setValue('participantIds', users.map(u => u.id), { shouldValidate: true });
+      }
     }
-    // Only run this effect when selectedEventId changes, to avoid infinite loops with participantIds
-  }, [selectedEventId, events, users, form]);
+  }, [selectedEventId, events, users, form, expenseToEdit]);
 
 
   async function onSubmit(data: ExpenseFormValues) {
@@ -133,7 +146,7 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
 
       if (customCategoryInput.trim()) { 
         categoryToSave = customCategoryInput.trim();
-        if (!categories.find(c => c.toLowerCase() === categoryToSave!.toLowerCase())) {
+        if (!categories.find(c => c.name.toLowerCase() === categoryToSave!.toLowerCase())) { // Assuming categories are objects now
           await addCategory(categoryToSave!); 
         }
       } else if (categoryToSave === NO_CATEGORY_VALUE || categoryToSave === DUMMY_EMPTY_CUSTOM_CATEGORY_VALUE) {
@@ -155,12 +168,19 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
         toast({ title: "Expense Added", description: `${data.description} for $${data.amount} added.` });
       }
       
+      const resetEventId = defaultEventId || NO_EVENT_VALUE; // Keep event selected if defaultEventId present
+      let resetParticipants = users.map(u => u.id);
+      if (resetEventId && resetEventId !== NO_EVENT_VALUE) {
+        const event = events.find(e => e.id === resetEventId);
+        if (event) resetParticipants = event.memberIds;
+      }
+
       form.reset({
           description: '',
           amount: 0,
           paidById: currentUser?.id || (users.length > 0 ? users[0].id : ''),
-          eventId: NO_EVENT_VALUE,
-          participantIds: users.map(u => u.id),
+          eventId: resetEventId, 
+          participantIds: resetParticipants,
           category: NO_CATEGORY_VALUE,
         });
       setCustomCategoryInput('');
@@ -183,11 +203,14 @@ export function AddExpenseSheet({ open, onOpenChange, expenseToEdit }: AddExpens
   const submitButtonText = expenseToEdit ? "Save Changes" : "Save Expense";
 
   const currentCategoryValue = form.watch('category');
-  const displayCategories = [...categories];
-  if (expenseToEdit?.category && !categories.includes(expenseToEdit.category)) {
+  
+  // Assuming categories from context are strings for now, if they are objects, this needs adjustment
+  const displayCategories = [...categories.map(c => typeof c === 'string' ? c : c.name)]; 
+  if (expenseToEdit?.category && !displayCategories.includes(expenseToEdit.category)) {
     displayCategories.push(expenseToEdit.category);
-    displayCategories.sort();
   }
+  displayCategories.sort();
+
 
   const formDisabled = isSubmitting || isAppLoading;
 

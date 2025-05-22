@@ -13,7 +13,7 @@ export interface Expense {
   paidById: string; // User ID
   participantIds: string[]; // User IDs
   eventId?: string; // Event ID
-  category?: string;
+  category?: string; // This will store the category NAME
   date: string; // ISO string date
 }
 
@@ -32,4 +32,9 @@ export interface Debt {
   userName: string;
   avatarUrl: string;
   balance: number; // Positive if owed, negative if owes
+}
+
+export interface Category { // New Category type
+  id: string;
+  name: string;
 }
