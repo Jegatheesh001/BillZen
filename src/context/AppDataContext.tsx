@@ -22,6 +22,7 @@ import {
   Timestamp,
   serverTimestamp,
   deleteField,
+  type FieldValue,
   type FirestoreError,
 } from 'firebase/firestore';
 import { onAuthStateChanged, type User as FirebaseUser } from 'firebase/auth';
@@ -49,7 +50,7 @@ interface AppDataContextState {
   firebaseUser: FirebaseUser | null;
   isLoading: boolean;
   error: string | null;
-  addUser: (name: string, avatarUrl?: string, email?: string, firebaseUid?: string) => Promise<User>;
+  addUser: (name: string, avatarUrl?: string, email?: string, firebaseUid?: string) => Promise<User | null>;
   addExpense: (expenseData: Omit<Expense, 'id' | 'date'>) => Promise<Expense | null>;
   updateExpense: (expenseId: string, updatedData: Partial<Omit<Expense, 'id' | 'date'>>) => Promise<void>;
   deleteExpense: (expenseId: string) => Promise<void>;
@@ -81,7 +82,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const clearError = () => setError(null);
 
-  const handleFirestoreError = useCallback((e: any, defaultMessage: string) => {
+  const handleFirestoreError = useCallback((e: any, defaultMessage: string): null => {
     const firestoreError = e as FirestoreError;
     const message = firestoreError.message || defaultMessage;
     setError(message);
@@ -90,7 +91,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     return null; // Return null for functions that expect a return value on error
   }, [toast]);
   
-  const fetchData = useCallback(async (currentFbUserForSeeding?: FirebaseUser | null) => {
+  const fetchData = useCallback(async () => {
     setError(null);
     let fetchedUsersList: User[] = [];
     let localSuccess = false;
@@ -129,6 +130,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       let currentCategoriesList = categoriesSnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Category));
       
       if (currentCategoriesList.length === 0) {
+        console.log("No categories found in Firestore, seeding initial categories...");
         const batch = writeBatch(db);
         const seededCategories: Category[] = [];
         INITIAL_CATEGORIES_DATA_SEED.forEach(catSeed => {
@@ -138,10 +140,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         });
         await batch.commit();
         currentCategoriesList = seededCategories.sort((a,b) => a.name.localeCompare(b.name));
+        console.log("Initial categories seeded:", currentCategoriesList.length);
       }
       setCategories(currentCategoriesList);
       
-      if (fetchedUsersList.length === 0 && !currentFbUserForSeeding && !auth.currentUser) { 
+      if (fetchedUsersList.length === 0 && !auth.currentUser) { 
+          console.log("No users found in Firestore and no Firebase auth user, seeding default users...");
           const batch = writeBatch(db);
           const seededUsers: User[] = [];
           DEFAULT_USERS_DATA_SEED.forEach(userSeed => {
@@ -151,6 +155,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
           });
           await batch.commit();
           fetchedUsersList = seededUsers.sort((a,b) => a.name.localeCompare(b.name));
+          console.log("Default users seeded:", fetchedUsersList.length);
       }
       
       setUsers(fetchedUsersList);
@@ -167,77 +172,80 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setIsLoading(true);
     const authUnsubscribe = onAuthStateChanged(auth, async (currentAuthUser) => {
-        setFirebaseUser(currentAuthUser);
-        const { fetchedUsers, success: dataFetchSuccess } = await fetchData(currentAuthUser);
+      setFirebaseUser(currentAuthUser); // Set firebaseUser state immediately
+      const { fetchedUsers, success: dataFetchSuccess } = await fetchData();
 
-        if (!dataFetchSuccess) {
-            setCurrentUser(null);
-            localStorage.removeItem('currentUserId');
-            setIsLoading(false);
-            return;
-        }
-
-        let finalUserToSet: User | null = null;
-
-        if (currentAuthUser) {
-            const userDocRef = doc(db, "users", currentAuthUser.uid);
-            try {
-                const userDocSnap = await getDoc(userDocRef);
-                if (userDocSnap.exists()) {
-                    finalUserToSet = { id: userDocSnap.id, ...userDocSnap.data() } as User;
-                } else {
-                    const newUserPayload: Omit<User, 'id'> = {
-                        name: currentAuthUser.displayName || `User-${currentAuthUser.uid.substring(0,5)}`,
-                        avatarUrl: currentAuthUser.photoURL || `https://placehold.co/100x100.png?text=${(currentAuthUser.displayName || "U").charAt(0).toUpperCase()}`,
-                        email: currentAuthUser.email || undefined,
-                    };
-                    await setDoc(userDocRef, newUserPayload);
-                    finalUserToSet = { id: currentAuthUser.uid, ...newUserPayload };
-                    setUsers(prevUsers => {
-                        const userExists = prevUsers.some(u => u.id === finalUserToSet!.id);
-                        return userExists ? prevUsers.map(u => u.id === finalUserToSet!.id ? finalUserToSet! : u).sort((a,b) => a.name.localeCompare(b.name))
-                                          : [...prevUsers, finalUserToSet!].sort((a, b) => a.name.localeCompare(b.name));
-                    });
-                }
-            } catch (e) {
-                 handleFirestoreError(e, "Failed to load or create user profile for authenticated user.");
-                 finalUserToSet = null;
-            }
-        } else {
-            const savedUserId = localStorage.getItem('currentUserId');
-            if (savedUserId) {
-                finalUserToSet = fetchedUsers.find(u => u.id === savedUserId) || null;
-            }
-            if (!finalUserToSet && fetchedUsers.length > 0) {
-                finalUserToSet = fetchedUsers[0]; 
-            }
-        }
-        
-        setCurrentUser(finalUserToSet);
-        if (finalUserToSet) {
-            localStorage.setItem('currentUserId', finalUserToSet.id);
-        } else {
-            localStorage.removeItem('currentUserId');
-        }
-        
+      if (!dataFetchSuccess) {
+        setCurrentUser(null);
+        localStorage.removeItem('currentUserId');
         setIsLoading(false);
+        return;
+      }
+
+      let finalUserToSet: User | null = null;
+
+      if (currentAuthUser) {
+        const userDocRef = doc(db, "users", currentAuthUser.uid);
+        try {
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            finalUserToSet = { id: userDocSnap.id, ...userDocSnap.data() } as User;
+          } else {
+            console.log(`No app profile for Firebase user ${currentAuthUser.uid}, creating one...`);
+            const newUserPayload: Omit<User, 'id'> = {
+              name: currentAuthUser.displayName || `User-${currentAuthUser.uid.substring(0,5)}`,
+              avatarUrl: currentAuthUser.photoURL || `https://placehold.co/100x100.png?text=${(currentAuthUser.displayName || "U").charAt(0).toUpperCase()}`,
+              email: currentAuthUser.email || undefined,
+            };
+            await setDoc(userDocRef, newUserPayload); // Directly setDoc here
+            finalUserToSet = { id: currentAuthUser.uid, ...newUserPayload };
+            // Update local 'users' state if this new user isn't in 'fetchedUsers'
+            if (!fetchedUsers.some(u => u.id === finalUserToSet!.id)) {
+              setUsers(prevUsers => [...prevUsers, finalUserToSet!].sort((a, b) => a.name.localeCompare(b.name)));
+            }
+          }
+        } catch (e) {
+           handleFirestoreError(e, "Failed to load or create user profile for authenticated user.");
+           finalUserToSet = null;
+        }
+      } else {
+        // No Firebase user, try localStorage or default to first fetched user
+        const savedUserId = localStorage.getItem('currentUserId');
+        if (savedUserId) {
+          finalUserToSet = fetchedUsers.find(u => u.id === savedUserId) || null;
+        }
+        if (!finalUserToSet && fetchedUsers.length > 0) {
+          finalUserToSet = fetchedUsers[0];
+        }
+      }
+      
+      setCurrentUser(finalUserToSet);
+      if (finalUserToSet) {
+        localStorage.setItem('currentUserId', finalUserToSet.id);
+      } else {
+        localStorage.removeItem('currentUserId');
+      }
+      
+      setIsLoading(false);
     });
 
     return () => {
-        authUnsubscribe();
+      authUnsubscribe();
     };
-}, [fetchData, handleFirestoreError]);
+  // fetchData is memoized and its dependencies (toast, handleFirestoreError) are stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [handleFirestoreError]); // Keep handleFirestoreError if it's stable, or ensure fetchData is stable
 
   useEffect(() => {
-    // This effect ensures a currentUser is selected if the list populates and no user is active.
-    // It avoids running during initial load or when Firebase user is being processed by the main effect.
+    // This effect handles selecting a default currentUser if none is set
+    // after the initial loading and when not actively processing a Firebase user.
     if (!currentUser && users.length > 0 && !isLoading && !firebaseUser) {
       const savedUserId = localStorage.getItem('currentUserId');
       let userToSet: User | null = null;
       if (savedUserId) {
         userToSet = users.find(u => u.id === savedUserId) || null;
       }
-      if (!userToSet && users.length > 0) { // Check users.length again in case it became empty
+      if (!userToSet && users.length > 0) {
         userToSet = users[0];
       }
       if (userToSet) {
@@ -248,7 +256,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [users, currentUser, isLoading, firebaseUser]);
 
 
-  const addUser = useCallback(async (name: string, avatarUrl?: string, email?: string, firebaseUid?: string): Promise<User> => {
+  const addUser = useCallback(async (name: string, avatarUrl?: string, email?: string, firebaseUid?: string): Promise<User | null> => {
     setIsLoading(true);
     setError(null);
     try {
@@ -274,7 +282,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       return newUser;
     } catch (e: any) {
       handleFirestoreError(e, "Failed to add user.");
-      throw e; // Re-throw to be caught by form if needed
+      return null; // Propagate null on error
     } finally {
       setIsLoading(false);
     }
@@ -290,6 +298,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         date: serverTimestamp(),
       };
       
+      // Remove category or eventId if they are undefined to prevent Firestore error
       if (!expenseData.hasOwnProperty('category') || expenseData.category === undefined) {
         delete payloadForFirestore.category;
       }
@@ -299,19 +308,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       const docRef = await addDoc(collection(db, "expenses"), payloadForFirestore);
       
-      const newExpenseData = { ...expenseData };
-      if (!newExpenseData.hasOwnProperty('category') || newExpenseData.category === undefined) {
-        delete newExpenseData.category;
+      const newExpenseDataForState = { ...expenseData };
+       if (!newExpenseDataForState.hasOwnProperty('category') || newExpenseDataForState.category === undefined) {
+        delete newExpenseDataForState.category;
       }
-      if (!newExpenseData.hasOwnProperty('eventId') || newExpenseData.eventId === undefined) {
-        delete newExpenseData.eventId;
+      if (!newExpenseDataForState.hasOwnProperty('eventId') || newExpenseDataForState.eventId === undefined) {
+        delete newExpenseDataForState.eventId;
       }
 
       const newExpense: Expense = {
-        ...newExpenseData,
+        ...newExpenseDataForState,
         id: docRef.id,
-        date: new Date().toISOString(), // Use client date for immediate UI, Firestore uses serverTimestamp
-      } as Expense; // Cast to Expense after ensuring all required fields are present
+        date: new Date().toISOString(), 
+      } as Expense; 
       
       setExpenses(prev => [newExpense, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
       toast({ title: "Expense Added", description: `${newExpense.description} added.`});
@@ -357,7 +366,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       toast({ title: "Expense Updated", description: "Expense details saved."});
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update expense.");
-      throw e;
+      throw e; // Re-throw to allow form to handle submission state
     } finally {
       setIsLoading(false);
     }
@@ -453,9 +462,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const finalAvatarUrl = avatarUrl || `https://placehold.co/100x100.png?text=${name.charAt(0).toUpperCase()}`;
       const userRef = doc(db, "users", userId);
       
-      const updatePayload: {name: string, avatarUrl: string, email?: string | typeof deleteField} = { 
-        name, 
-        avatarUrl: finalAvatarUrl 
+      const updatePayload: { name: string; avatarUrl: string; email?: string | FieldValue } = {
+        name,
+        avatarUrl: finalAvatarUrl,
       };
 
       if (email === undefined || email === '') { 
@@ -463,6 +472,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       } else if (email) { 
         updatePayload.email = email;
       }
+      // If email parameter was not provided (and not empty string/undefined), updatePayload.email remains unset, 
+      // so Firestore won't touch the email field.
 
       await updateDoc(userRef, updatePayload);
       
@@ -495,7 +506,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [currentUser, toast, handleFirestoreError]);
 
   const setCurrentUserById = useCallback((userId: string | null) => {
-    // This function is called from UI, so it doesn't need its own isLoading
     if (userId === null) {
       setCurrentUser(null);
       localStorage.removeItem('currentUserId');
@@ -515,19 +525,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const trimmedName = categoryName.trim();
-      const categoriesCol = collection(db, "categories");
-      
-      const q = query(categoriesCol, where("name", "==", trimmedName)); // Case-sensitive query
-      const existingCategorySnap = await getDocs(q);
-      // Firestore queries are case-sensitive. We need to check fetched results case-insensitively.
-      const trulyExisting = existingCategorySnap.docs.find(docSnap => docSnap.data().name.toLowerCase() === trimmedName.toLowerCase());
-
       if (!trimmedName) {
         toast({ title: "Cannot Add", description: "Category name cannot be empty.", variant: "destructive" });
+        setIsLoading(false);
         return null;
       }
+
+      const categoriesCol = collection(db, "categories");
+      const q = query(categoriesCol, where("name", "==", trimmedName));
+      const existingCategorySnap = await getDocs(q);
+      const trulyExisting = existingCategorySnap.docs.find(docSnap => docSnap.data().name.toLowerCase() === trimmedName.toLowerCase());
+
       if (trulyExisting) {
         toast({ title: "Category Exists", description: `Category "${trimmedName}" already exists.`, variant: "default" });
+        setIsLoading(false);
         return null; 
       }
       
@@ -552,6 +563,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const trimmedNewName = newCategoryName.trim();
       if (!trimmedNewName) {
         toast({ title: "Cannot Update", description: "New category name cannot be empty.", variant: "destructive" });
+        setIsLoading(false);
         return false;
       }
 
@@ -559,13 +571,15 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const oldCategorySnap = await getDoc(categoryRef);
       if (!oldCategorySnap.exists()) {
         toast({ title: "Not Found", description: `Category to update not found.`, variant: "destructive" });
+        setIsLoading(false);
         return false;
       }
       const oldCategoryName = oldCategorySnap.data()?.name;
 
       if (oldCategoryName.toLowerCase() === trimmedNewName.toLowerCase()) {
         toast({ title: "No Change", description: `Category name is already "${trimmedNewName}".` });
-        return true; // No actual change needed
+        setIsLoading(false);
+        return true;
       }
 
       const q = query(collection(db, "categories"), where("name", "==", trimmedNewName));
@@ -574,6 +588,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
       if (conflict) {
          toast({ title: "Already Exists", description: `Category name "${trimmedNewName}" is already used by another category.`, variant: "destructive" });
+         setIsLoading(false);
         return false; 
       }
       
@@ -597,7 +612,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (e: any) {
       handleFirestoreError(e, "Failed to update category.");
-      return false; // Indicate failure
+      setIsLoading(false);
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -611,6 +627,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       const categorySnap = await getDoc(categoryRef);
       if (!categorySnap.exists()) {
          toast({ title: "Not Found", description: `Category to delete not found.`, variant: "destructive" });
+         setIsLoading(false);
          return;
       }
       const categoryName = categorySnap.data()?.name;
@@ -629,7 +646,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setExpenses(prevExpenses => prevExpenses.map(exp => {
           if (exp.category && exp.category.toLowerCase() === categoryName.toLowerCase()) {
             const { category, ...rest } = exp; 
-            return rest;
+            return rest as Expense; // Assert as Expense after removing category
           }
           return exp;
         }
@@ -644,22 +661,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [toast, handleFirestoreError]);
 
   const addSettlement = useCallback(async (details: { payerId: string; recipientId: string; amount: number; payerName: string; recipientName: string }): Promise<Expense | null> => {
-    // setIsLoading(true) is handled by addExpense
     setError(null);
     const settlementCategoryName = "Settlement";
-    // Ensure "Settlement" category exists, or add it
     let settlementCategory = categories.find(c => c.name.toLowerCase() === settlementCategoryName.toLowerCase());
+    
     if (!settlementCategory) {
       try {
-        // This might briefly set isLoading to true if addCategory does, which is fine.
         const newCat = await addCategory(settlementCategoryName);
-        if (!newCat) { // If addCategory fails (e.g. already exists but wasn't found due to case, or empty string)
+        if (!newCat) {
             toast({title: "Settlement Error", description: "Could not ensure 'Settlement' category exists.", variant: "destructive"});
             return null;
         }
         settlementCategory = newCat;
       } catch (error) {
-        // Error already handled by addCategory's handleFirestoreError
         return null;
       }
     }
@@ -668,11 +682,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       description: `Settlement: ${details.payerName} to ${details.recipientName}`,
       amount: details.amount,
       paidById: details.payerId,
-      participantIds: [details.recipientId], // Recipient is the sole participant in a settlement expense from payer's perspective
+      participantIds: [details.recipientId], 
       category: settlementCategoryName, 
     };
+    // addExpense will handle setIsLoading
     return addExpense(settlementExpenseData);
-  }, [addExpense, categories, addCategory, toast]);
+  }, [addExpense, categories, addCategory, toast, handleFirestoreError]);
 
   const contextValue = useMemo(() => ({
     users,
@@ -701,7 +716,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     users, expenses, events, categories, currentUser, firebaseUser, isLoading, error, 
     addUser, addExpense, updateExpense, deleteExpense, clearAllExpenses, 
     addEvent, updateEvent, updateUser, setCurrentUserById, 
-    addCategory, updateCategory, removeCategory, addSettlement // handleFirestoreError is stable
+    addCategory, updateCategory, removeCategory, addSettlement, handleFirestoreError
   ]);
 
   return (
