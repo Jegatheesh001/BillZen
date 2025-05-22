@@ -118,13 +118,12 @@ export function ExpenseCard({ expense, users, eventName, onEdit }: ExpenseCardPr
             </div>
           )}
         </div>
-        <div className="flex items-start">
-          <Users className="h-4 w-4 mr-2 mt-0.5 text-primary" />
-          <div>
-            <span>For: </span>
-            <div className="flex flex-wrap gap-1 mt-0.5">
+        <div className="flex items-start"> {/* Aligns icon with the top of the first line of badges */}
+          <Users className="h-4 w-4 mr-2 mt-0.5 text-primary" /> {/* Icon */}
+          <span className="mr-1">For: </span> {/* Label */}
+          <div className="flex flex-wrap gap-1"> {/* Container FOR BADGES, allows wrapping */}
             {participants.map(p => (
-              <Badge key={p.id} variant="outline" className="text-xs">
+              <Badge key={p.id} variant="outline" className="text-xs inline-flex items-center">
                 <Avatar className="h-4 w-4 mr-1">
                   <AvatarImage src={p.avatarUrl} alt={p.name} data-ai-hint="person portrait" />
                   <AvatarFallback>{p.name.charAt(0)}</AvatarFallback>
@@ -132,7 +131,6 @@ export function ExpenseCard({ expense, users, eventName, onEdit }: ExpenseCardPr
                 {p.name}
               </Badge>
             ))}
-            </div>
           </div>
         </div>
         {eventName && (
